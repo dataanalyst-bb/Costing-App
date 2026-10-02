@@ -1,0 +1,2323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Garment Pricing App</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{
+  --bg:#f7f6f3; --surface:#ffffff; --surface-1:#f2f1ed; --border:#e2e0d8; --border-strong:#c9c6ba;
+  --text:#232220; --text-secondary:#6b6a63; --text-muted:#9a988e;
+  --accent:#2563eb; --accent-bg:#e8f0fe;
+  --success:#15803d; --success-bg:#e7f6ec;
+  --warning:#b45309; --warning-bg:#fdf1e3;
+  --danger:#b91c1c; --danger-bg:#fdeaea;
+  --radius:8px;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.5}
+a{color:inherit}
+h1,h2,h3{font-weight:500;margin:0 0 4px}
+h1{font-size:20px}
+h3{font-size:13px;color:var(--text-secondary);margin-bottom:8px}
+.layout{display:flex;min-height:100vh}
+.sidebar{width:220px;flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);padding:20px 12px;position:sticky;top:0;height:100vh;overflow-y:auto}
+.sidebar-group{margin-bottom:18px}
+.nav-btn{display:block;width:100%;text-align:left;background:none;border:none;padding:8px 10px;border-radius:var(--radius);font-size:13px;color:var(--text);cursor:pointer;margin-bottom:1px}
+.nav-btn:hover{background:var(--surface-1)}
+.nav-btn.active{background:var(--accent-bg);color:var(--accent);font-weight:500}
+.main{flex:1;padding:28px 32px;max-width:1150px}
+.page{display:none}
+.page.active{display:block}
+.badge{display:inline-block;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:500}
+.badge-success{background:var(--success-bg);color:var(--success)}
+.badge-warning{background:var(--warning-bg);color:var(--warning)}
+.badge-accent{background:var(--accent-bg);color:var(--accent)}
+table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:16px}
+th{text-align:left;color:var(--text-secondary);font-weight:400;padding:6px 8px;border-bottom:1px solid var(--border)}
+td{padding:8px 8px;border-bottom:1px solid var(--border)}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 18px;margin-bottom:16px}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+.mini-input{width:55px;font-size:12px;padding:4px 4px}
+input,select,textarea,button{font-family:inherit;font-size:13px;border:1px solid var(--border-strong);border-radius:var(--radius);padding:7px 10px;background:var(--surface);color:var(--text)}
+button{cursor:pointer}
+button:hover{background:var(--surface-1)}
+button.primary{background:var(--text);color:var(--surface);border-color:var(--text)}
+button.small{font-size:11px;padding:4px 8px}
+.note{font-size:12px;color:var(--text-muted)}
+.actions{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
+label{font-size:11px;color:var(--text-secondary);display:block;margin-bottom:3px}
+#connStatus{position:fixed;bottom:10px;right:10px;font-size:11px;padding:4px 10px;border-radius:20px;background:var(--surface-1);color:var(--text-muted)}
+input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+input[type=number]{-moz-appearance:textfield}
+@media print{
+  .sidebar,.actions,#connStatus{display:none !important}
+  .main{padding:0 !important;max-width:100% !important}
+  .layout{display:block !important}
+}
+</style>
+</head>
+<body>
+
+<div id="connStatus">Connecting to Supabase...</div>
+
+<div id="loginOverlay" style="display:flex;position:fixed;top:0;left:0;right:0;bottom:0;background:var(--bg);z-index:2000;align-items:center;justify-content:center">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:32px;max-width:360px;width:90%">
+    <h1 style="margin-bottom:4px">Garment Pricing App</h1>
+    <p class="note" style="margin-bottom:20px">Sign in to continue</p>
+    <div style="margin-bottom:12px">
+      <label>Email</label>
+      <input id="login_email" type="email" style="width:100%" onkeydown="if(event.key==='Enter'){document.getElementById('login_password').focus()}">
+    </div>
+    <div style="margin-bottom:16px">
+      <label>Password</label>
+      <input id="login_password" type="password" style="width:100%" onkeydown="if(event.key==='Enter'){attemptLogin()}">
+    </div>
+    <p class="note" id="loginError" style="color:var(--danger);margin-bottom:12px"></p>
+    <button class="primary" style="width:100%" onclick="attemptLogin()">Sign in</button>
+  </div>
+</div>
+
+<div class="layout" id="mainLayout" style="display:none">
+  <div class="sidebar">
+    <div class="sidebar-group">
+      <button class="nav-btn active" data-page="dashboard">Dashboard</button>
+      <button class="nav-btn" data-page="summary">Summary</button>
+    </div>
+    <div class="sidebar-group">
+      <button class="nav-btn" data-page="master-fabric">Fabric (live)</button>
+      <button class="nav-btn" data-page="master-customer">Customer (live)</button>
+      <button class="nav-btn" data-page="master-dept">Department and category</button>
+      <button class="nav-btn" data-page="master-sewing">Sewing supplier</button>
+      <button class="nav-btn" data-page="master-subprocess">Subprocess</button>
+      <button class="nav-btn" data-page="master-style">Style</button>
+      <button class="nav-btn" data-page="master-recipients">Recipients</button>
+      <button class="nav-btn" data-page="team-members">Team members</button>
+      <button class="nav-btn" data-page="costing-local">New Costing Sheet</button>
+    </div>
+    <div class="sidebar-group">
+      <button class="nav-btn" onclick="logOut()" style="color:var(--danger);display:none">Log out</button>
+    </div>
+  </div>
+
+  <div class="main">
+
+    <div class="page active" id="page-dashboard">
+      <h1>Dashboard</h1>
+      <p class="note">Still static.</p>
+    </div>
+
+    <div class="page" id="page-summary">
+      <h1>Summary</h1>
+      <div class="tabbar" id="summaryCustomerTabs" style="display:flex;gap:20px;border-bottom:1px solid var(--border);margin-bottom:16px;overflow-x:auto"></div>
+      <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+        <input id="summarySearchStyle" placeholder="Search style name" oninput="renderSummaryTable()">
+        <input id="summarySearchColour" placeholder="Search colour" oninput="renderSummaryTable()">
+        <input id="summarySearchFabric" placeholder="Search fabric" oninput="renderSummaryTable()">
+        <select id="summaryStatusFilter" onchange="renderSummaryTable()">
+          <option value="">All statuses</option>
+          <option value="draft">Draft</option>
+          <option value="submitted">Submitted</option>
+        </select>
+      </div>
+      <p class="note" id="summaryLoadStatus" style="margin-bottom:8px">Loading...</p>
+      <div style="overflow-x:auto">
+      <table style="min-width:950px">
+        <tr><th>Style</th><th>Colour</th><th>Category</th><th>Fabrics</th><th>Given price</th><th>Status</th><th>Ordered</th><th>Requester</th><th>Submitted date</th><th></th></tr>
+        <tbody id="summaryRows"></tbody>
+      </table>
+      </div>
+    </div>
+
+    <div class="page" id="page-master-fabric">
+      <h1>Fabric master</h1>
+      <p class="note" id="fabricLoadStatus">Loading fabrics from Supabase...</p>
+      <div style="display:flex;justify-content:space-between;margin-bottom:12px">
+        <input id="fabricSearch" placeholder="Search fabric or supplier" oninput="renderFabricTable()">
+        <button class="primary" onclick="openAddFabric()">+ Add fabric</button>
+      </div>
+      <div style="overflow-x:auto">
+      <table style="min-width:900px">
+        <tr><th>Fabric</th><th>Supplier</th><th>Width</th><th>Color</th><th>UOM</th><th>Price/roll</th><th>MOQ</th><th>Last updated</th><th></th></tr>
+        <tbody id="fabricRows"></tbody>
+      </table>
+      </div>
+      <h3 id="fabricFormTitle" style="display:none">Fabric detail</h3>
+      <div class="card" id="fabricFormPanel" style="display:none">
+        <input type="hidden" id="ff_id">
+        <div class="grid-3" style="margin-bottom:12px">
+          <div><label>Fabric name</label><input id="ff_name"></div>
+          <div><label>Supplier</label><input id="ff_supplier"></div>
+          <div><label>Width (cm)</label><input id="ff_width" type="number"></div>
+        </div>
+        <div class="grid-3" style="margin-bottom:12px">
+          <div><label>Color (blank = RFD)</label><input id="ff_color"></div>
+          <div><label>Purchase unit</label><select id="ff_unit"><option value="yard">Yard</option><option value="kg">Kilogram</option><option value="meter">Meter</option></select></div>
+          <div><label>MOQ</label><select id="ff_moq"><option value="roll">Roll</option><option value="retail">Retail</option></select></div>
+        </div>
+        <div class="grid-2" style="margin-bottom:12px">
+          <div><label>Price / roll</label><input id="ff_priceRoll" type="number"></div>
+          <div><label>Price / retail</label><input id="ff_priceRetail" type="number"></div>
+        </div>
+        <div class="grid-2" style="margin-bottom:12px">
+          <div><label>Meters per kg (only used if unit = Kilogram)</label><input id="ff_metersPerKg" type="number" step="0.01"></div>
+          <div></div>
+        </div>
+        <label>Notes</label>
+        <textarea id="ff_notes" rows="2" style="width:100%;margin-bottom:8px"></textarea>
+        <p class="note" id="fabricFormError" style="color:var(--danger)"></p>
+        <div class="actions">
+          <button onclick="closeFabricForm()">Cancel</button>
+          <button class="primary" onclick="saveFabric()">Save fabric</button>
+        </div>
+      </div>
+
+      <div id="fabricHistoryOverlay" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.45);z-index:999;align-items:center;justify-content:center">
+        <div style="background:var(--surface);border-radius:12px;padding:20px;max-width:600px;width:95%;max-height:80vh;overflow-y:auto">
+          <h3 style="margin-bottom:12px" id="fabricHistoryTitle">Price history</h3>
+          <table>
+            <tr><th>Date changed</th><th>Price/roll</th><th>Width</th><th>MOQ</th></tr>
+            <tbody id="fabricHistoryRows"></tbody>
+          </table>
+          <div class="actions">
+            <button onclick="closeFabricHistory()">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="page" id="page-master-customer">
+      <h1>Customer master</h1>
+      <p class="note" id="customerLoadStatus">Loading customers from Supabase...</p>
+      <div style="display:flex;justify-content:space-between;margin-bottom:12px">
+        <input id="customerSearch" placeholder="Search customer name" oninput="renderCustomerTable()">
+        <button class="primary" onclick="openAddCustomer()">+ Add customer</button>
+      </div>
+      <table>
+        <tr><th>Name</th><th>Contact</th><th>Email</th><th>Phone</th><th>Status</th><th></th></tr>
+        <tbody id="customerRows"></tbody>
+      </table>
+      <h3 id="customerFormTitle" style="display:none">Customer detail</h3>
+      <div class="card" id="customerFormPanel" style="display:none">
+        <input type="hidden" id="cf_id">
+        <div class="grid-2" style="margin-bottom:12px">
+          <div><label>Customer name</label><input id="cf_name"></div>
+          <div><label>Contact person</label><input id="cf_contact"></div>
+        </div>
+        <div class="grid-2" style="margin-bottom:12px">
+          <div><label>Email</label><input id="cf_email"></div>
+          <div><label>Phone</label><input id="cf_phone"></div>
+        </div>
+        <div style="max-width:180px;margin-bottom:12px">
+          <label>Status</label>
+          <select id="cf_active"><option value="true">Active</option><option value="false">Inactive</option></select>
+        </div>
+        <p class="note" id="customerFormError" style="color:var(--danger)"></p>
+        <div class="actions">
+          <button onclick="closeCustomerForm()">Cancel</button>
+          <button class="primary" onclick="saveCustomer()">Save customer</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="page" id="page-master-dept">
+      <h1>Department and category master</h1>
+      <p class="note" id="deptLoadStatus">Loading departments from Supabase...</p>
+      <div id="deptCards"></div>
+    </div>
+
+    <div class="page" id="page-master-sewing">
+      <h1>Sewing supplier master</h1>
+      <p class="note" id="sewingLoadStatus">Loading sewing suppliers from Supabase...</p>
+      <div style="display:flex;justify-content:space-between;margin-bottom:12px">
+        <input id="sewingSearch" placeholder="Search supplier name" oninput="renderSewingTable()">
+        <button class="primary" onclick="openAddSewing()">+ Add supplier</button>
+      </div>
+      <table>
+        <tr><th>Supplier</th><th>Status</th><th></th></tr>
+        <tbody id="sewingRows"></tbody>
+      </table>
+      <h3 id="sewingFormTitle" style="display:none">Supplier detail</h3>
+      <div class="card" id="sewingFormPanel" style="display:none">
+        <input type="hidden" id="sw_id">
+        <div class="grid-2" style="margin-bottom:12px">
+          <div><label>Supplier name</label><input id="sw_name"></div>
+          <div><label>Status</label><select id="sw_active"><option value="true">Active</option><option value="false">Inactive</option></select></div>
+        </div>
+        <p class="note" id="sewingFormError" style="color:var(--danger)"></p>
+        <div class="actions">
+          <button onclick="closeSewingForm()">Cancel</button>
+          <button class="primary" onclick="saveSewing()">Save supplier</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="page" id="page-master-subprocess">
+      <h1>Subprocess master</h1>
+      <p class="note" id="subprocessLoadStatus">Loading subprocess suppliers from Supabase...</p>
+      <div style="display:flex;justify-content:space-between;margin-bottom:12px">
+        <input id="subprocessSearch" placeholder="Search subprocess or supplier" oninput="renderSubprocessTable()">
+        <button class="primary" onclick="openAddSubprocess()">+ Add supplier</button>
+      </div>
+      <table>
+        <tr><th>Subprocess</th><th>Supplier</th><th>Status</th><th></th></tr>
+        <tbody id="subprocessRows"></tbody>
+      </table>
+      <h3 id="subprocessFormTitle" style="display:none">Detail</h3>
+      <div class="card" id="subprocessFormPanel" style="display:none">
+        <input type="hidden" id="sp_id">
+        <div class="grid-3" style="margin-bottom:12px">
+          <div><label>Subprocess</label><select id="sp_type"><option value="Printing">Printing</option><option value="Dyeing">Dyeing</option><option value="Washing">Washing</option><option value="Tie-dye">Tie-dye</option><option value="Bleaching">Bleaching</option></select></div>
+          <div><label>Supplier</label><input id="sp_supplier"></div>
+          <div><label>Status</label><select id="sp_active"><option value="true">Active</option><option value="false">Inactive</option></select></div>
+        </div>
+        <p class="note" id="subprocessFormError" style="color:var(--danger)"></p>
+        <div class="actions">
+          <button onclick="closeSubprocessForm()">Cancel</button>
+          <button class="primary" onclick="saveSubprocess()">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="page" id="page-master-style">
+      <h1>Style master</h1>
+      <p class="note" id="styleLoadStatus">Loading styles from Supabase...</p>
+      <input id="styleSearch" placeholder="Search style name" oninput="renderStyleTable()" style="margin-bottom:12px">
+      <table>
+        <tr><th>Style</th><th>Fabric (reference)</th><th></th></tr>
+        <tbody id="styleRows"></tbody>
+      </table>
+    </div>
+
+    <div class="page" id="page-master-recipients">
+      <h1>Recipients</h1>
+      <p class="note" id="recipientLoadStatus">Loading recipients from Supabase...</p>
+      <div style="display:flex;justify-content:space-between;margin-bottom:12px">
+        <input id="recipientSearch" placeholder="Search name or email" oninput="renderRecipientTable()">
+        <button class="primary" onclick="openAddRecipient()">+ Add recipient</button>
+      </div>
+      <table>
+        <tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr>
+        <tbody id="recipientRows"></tbody>
+      </table>
+      <h3 id="recipientFormTitle" style="display:none">Recipient detail</h3>
+      <div class="card" id="recipientFormPanel" style="display:none">
+        <input type="hidden" id="rc_id">
+        <div class="grid-2" style="margin-bottom:12px">
+          <div><label>Name</label><input id="rc_name"></div>
+          <div><label>Email</label><input id="rc_email"></div>
+        </div>
+        <div class="grid-2" style="margin-bottom:12px">
+          <div><label>Role</label><input id="rc_role"></div>
+          <div><label>Status</label><select id="rc_active"><option value="true">Active</option><option value="false">Inactive</option></select></div>
+        </div>
+        <p class="note" id="recipientFormError" style="color:var(--danger)"></p>
+        <div class="actions">
+          <button onclick="closeRecipientForm()">Cancel</button>
+          <button class="primary" onclick="saveRecipient()">Save recipient</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="page" id="page-team-members">
+      <h1>Team members</h1>
+      <p class="note" style="margin-bottom:12px">To add or remove someone, use the Supabase dashboard directly (Authentication → Users, then add their profile here via SQL Editor).</p>
+      <table>
+        <tr><th>Name</th><th>Email</th></tr>
+        <tbody id="teamMembersRows"></tbody>
+      </table>
+    </div>
+    <div class="page" id="page-view-costing">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <button onclick="goToPage('summary')">← Back to Summary</button>
+        <button class="primary" onclick="window.print()">Print</button>
+      </div>
+      <div id="viewCostingContent" style="max-width:800px;margin:0 auto;background:white;padding:24px"></div>
+    </div>
+
+    <div class="page" id="page-costing-local">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;flex-wrap:wrap;gap:8px">
+        <div style="display:flex;align-items:center;gap:6px">
+          <input id="cs_styleName" placeholder="Style name" style="border:none;font-size:16px;font-weight:500;width:150px" oninput="autoGrowInput(this)">
+          <span>—</span>
+          <input id="cs_colour" placeholder="Colour" style="border:none;font-size:16px;color:var(--text-secondary);width:120px" oninput="autoGrowInput(this)">
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="badge badge-accent" id="cs_versionBadge">V1 · Draft</span>
+          <button class="small" onclick="openCopyToCustomer()">Copy to another customer</button>
+          <button class="small" id="cs_duplicateBtn" style="display:none" onclick="duplicateCurrentSheet()">Duplicate this sheet</button>
+        </div>
+      </div>
+
+      <div id="cs_priceAlertBanner" style="display:none;background:var(--warning-bg);color:var(--warning);border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:13px"></div>
+
+      <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+        <div><label>Customer</label><select id="cs_customer" style="width:150px"></select></div>
+        <div><label>Department</label><select id="cs_department" onchange="populateCategoryOptions();updateMarkupDisplay()" style="width:150px"></select></div>
+        <div>
+          <label>Category</label>
+          <input id="cs_category" list="cs_categoryList" placeholder="Type to search or add new" style="width:150px">
+          <datalist id="cs_categoryList"></datalist>
+        </div>
+      </div>
+
+      <div class="grid-2" style="margin-bottom:16px;gap:8px;max-width:400px">
+        <div><label>Requester</label><select id="cs_requester"></select></div>
+        <div><label>Request date</label><input id="cs_requestDate" type="date"></div>
+      </div>
+
+      <div style="display:flex;gap:16px;margin-bottom:16px;align-items:flex-start;flex-wrap:wrap">
+        <div>
+          <label>Reference images (click box, then paste with Ctrl+V)</label>
+          <div id="csImageRow" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+        </div>
+        <div style="flex:1;min-width:200px">
+          <label>Notes</label>
+          <textarea id="cs_notes" style="width:268px;height:134px;resize:both;min-width:200px;min-height:80px" placeholder="Free notes"></textarea>
+        </div>
+      </div>
+
+      <h3>Fabric slots</h3>
+      <div class="grid-3" id="fabricSlotsContainer" style="margin-bottom:8px"></div>
+      <button onclick="addFabricSlot()" style="margin-bottom:16px">+ Add fabric</button>
+
+      <h3>Fabric cost</h3>
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+        <span class="note">4th subprocess:</span>
+        <button class="small fourthTypeBtn" data-type="Tie-dye" onclick="setFourthSubprocess('Tie-dye')" style="background:var(--accent-bg);color:var(--accent)">Tie-dye</button>
+        <button class="small fourthTypeBtn" data-type="Printing" onclick="setFourthSubprocess('Printing')">Printing</button>
+        <button class="small fourthTypeBtn" data-type="Dyeing" onclick="setFourthSubprocess('Dyeing')">Dyeing</button>
+        <button class="small fourthTypeBtn" data-type="Washing" onclick="setFourthSubprocess('Washing')">Washing</button>
+        <button class="small fourthTypeBtn" data-type="Bleaching" onclick="setFourthSubprocess('Bleaching')">Bleaching</button>
+      </div>
+      <div style="overflow-x:auto">
+      <table style="min-width:760px">
+        <tr><th>Fabric</th><th>Colour</th><th>Price/m</th><th>Washing/m</th><th>Dyeing/m</th><th>Printing/m</th><th id="fourthSubprocessHeader">Tie-dye/m</th><th>Consp.</th><th>Cost</th></tr>
+        <tbody id="fabricCostRows"></tbody>
+        <tr><td colspan="8" style="text-align:right;font-weight:500">Fabric total</td><td style="font-weight:500" id="fabricCostTotal">Rp 0</td></tr>
+      </table>
+      </div>
+
+      <h3>Sewing suppliers</h3>
+      <table>
+        <tr><th>Supplier</th><th>Max</th><th>Nawar (min)</th><th></th></tr>
+        <tbody id="sewingLinesTable"></tbody>
+      </table>
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:16px">
+        <select id="sewingSupplierPicker" style="flex:1"></select>
+        <button class="small" onclick="addSewingLine()">+ Add supplier</button>
+      </div>
+
+      <h3>Additional info</h3>
+      <div style="margin-bottom:16px">
+        <label>Haberdashery usage, trims, or other notes</label>
+        <textarea id="cs_additionalInfo" rows="4" style="width:100%" placeholder="e.g. Zipper 20cm x2, Button 15mm x6, Elastic 1cm..."></textarea>
+      </div>
+
+      <h3>Sewing & process costs</h3>
+      <div class="grid-3" style="margin-bottom:16px">
+        <div>
+          <label>Sewing cost (auto sum, editable)</label>
+          <div style="display:flex;gap:6px">
+            <input id="cs_sewing" type="text" inputmode="decimal" value="0" oninput="this.setAttribute('data-touched','1');calcCostingTotals()" onfocus="this.value=this.value.replace(/,/g,'')" onblur="formatRowInput(this)" onkeydown="if(event.key==='Enter'){event.preventDefault();formatRowInput(this);this.blur();}">
+            <button class="small" onclick="resetSewingCost()">Reset</button>
+          </div>
+        </div>
+        <div><label>Cutting cost</label><input id="cs_cutting" type="number" value="1500" oninput="calcCostingTotals()"></div>
+        <div><label>Hardware cost</label><input id="cs_hardware" type="text" value="0" data-raw="0" onfocus="this.value=this.getAttribute('data-raw')" onblur="calcFormulaField(this)"></div>
+      </div>
+      <div class="grid-3" style="margin-bottom:16px">
+        <div><label>Overhead cost</label><input id="cs_overhead" type="number" value="2000" oninput="calcCostingTotals()"></div>
+        <div><label>Markup % (from department)</label><input id="cs_markup" type="number" disabled></div>
+        <div></div>
+      </div>
+
+      <div class="card" style="background:var(--surface-1);border:none">
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>Base cost</span><span id="cs_baseCost">Rp 0</span></div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>Price after markup</span><span id="cs_afterMarkup">Rp 0</span></div>
+        <div style="display:flex;justify-content:space-between;font-weight:500;font-size:15px"><span>Selling price (ceil 1000)</span><span id="cs_sellingPrice">Rp 0</span></div>
+      </div>
+
+      <div class="grid-2" style="margin-top:12px;margin-bottom:8px">
+        <div>
+          <label>Given price (editable — this is what appears in Summary)</label>
+          <div style="display:flex;gap:6px">
+            <input id="cs_givenPrice" type="text" inputmode="decimal" value="0" oninput="this.setAttribute('data-touched','1');calcGivenPriceMarkup()" onfocus="this.value=this.value.replace(/,/g,'')" onblur="formatRowInput(this);calcGivenPriceMarkup()" onkeydown="if(event.key==='Enter'){event.preventDefault();formatRowInput(this);calcGivenPriceMarkup();this.blur();}">
+            <button class="small" onclick="resetGivenPrice()">Reset</button>
+          </div>
+        </div>
+        <div>
+          <label>Effective markup (base cost → given price)</label>
+          <div id="cs_effectiveMarkup" style="padding:7px 0;font-size:13px">0%</div>
+        </div>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:16px;margin:12px 0">
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px">
+          <input type="checkbox" id="cs_isOrdered" style="width:auto"> Ordered (went to production)
+        </label>
+        <button onclick="openOrderCalculator()">Order calculator</button>
+      </div>
+
+      <p class="note" id="costingFormError" style="color:var(--danger);margin-top:8px"></p>
+      <div class="actions">
+        <button onclick="saveCostingSheet('draft')">Save as draft</button>
+        <button class="primary" onclick="saveCostingSheet('submitted')">Submit</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div id="copyToCustomerOverlay" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.45);z-index:999;align-items:center;justify-content:center">
+  <div style="background:var(--surface);border-radius:12px;padding:20px;max-width:400px;width:90%">
+    <h3 style="margin-bottom:12px">Copy to another customer</h3>
+    <p class="note" style="margin-bottom:12px">Same department and category will be kept — everything else copies as-is into a new draft for the selected customer.</p>
+    <label>Customer</label>
+    <select id="copyToCustomerSelect" style="width:100%;margin-bottom:16px"></select>
+    <div class="actions">
+      <button onclick="closeCopyToCustomer()">Cancel</button>
+      <button class="primary" onclick="confirmCopyToCustomer()">Copy</button>
+    </div>
+  </div>
+</div>
+
+<div id="orderCalcOverlay" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.45);z-index:999;align-items:center;justify-content:center">
+  <div style="background:var(--surface);border-radius:12px;padding:20px;max-width:700px;width:95%;max-height:85vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h3 style="margin:0">Order calculator</h3>
+      <button class="small" onclick="closeOrderCalculator()">Close</button>
+    </div>
+    <div id="orderCalcContainer"></div>
+  </div>
+</div>
+
+<div id="changelogOverlay" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.45);z-index:999;align-items:center;justify-content:center">
+  <div style="background:var(--surface);border-radius:12px;padding:20px;max-width:600px;width:95%;max-height:80vh;overflow-y:auto">
+    <h3 style="margin-bottom:12px">Version log</h3>
+    <table>
+      <tr><th>Version change</th><th>Changed by</th><th>Date</th><th>Summary</th></tr>
+      <tbody id="changelogRows"></tbody>
+    </table>
+    <div class="actions">
+      <button onclick="document.getElementById('changelogOverlay').style.display='none'">Close</button>
+    </div>
+  </div>
+</div>
+
+<script src="config.js" onerror="void 0"></script>
+<script>
+const SUPABASE_URL = 'https://osmokdzgqgnmdudtkpnz.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_ZGbwswTEVOV1lNtI_6Wzbg_OZnp_HAq';
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+var currentUserName = null;
+var isAnonymousUser = false;
+
+// ---- SINGLE-USER MODE (local file only) ----
+// Fill these in after resetting your password in Supabase.
+// Anyone who can open this file can read these, so keep the file private.
+// Credentials now live in config.js (git-ignored). If it's missing, the app falls back to anonymous sign-in.
+const APP_CONFIG = window.APP_CONFIG || {};
+const AUTO_LOGIN_EMAIL = APP_CONFIG.email || 'PUT_YOUR_EMAIL_HERE';
+const AUTO_LOGIN_PASSWORD = APP_CONFIG.password || '';
+
+async function attemptLogin(){
+  var email = document.getElementById('login_email').value.trim();
+  var password = document.getElementById('login_password').value;
+  document.getElementById('loginError').textContent = '';
+  if (!email || !password){
+    document.getElementById('loginError').textContent = 'Please enter both email and password.';
+    return;
+  }
+  const { data, error } = await supabaseClient.auth.signInWithPassword({ email: email, password: password });
+  if (error){
+    document.getElementById('loginError').textContent = 'Login failed: ' + error.message;
+    return;
+  }
+  await loadCurrentUserProfile();
+  document.getElementById('loginOverlay').style.display = 'none';
+  document.getElementById('mainLayout').style.display = 'flex';
+}
+
+async function loadCurrentUserProfile(){
+  const { data: userData } = await supabaseClient.auth.getUser();
+  if (!userData || !userData.user) return;
+  const { data: profile } = await supabaseClient.from('profiles').select('full_name').eq('id', userData.user.id).single();
+  isAnonymousUser = !!userData.user.is_anonymous;
+  currentUserName = profile && profile.full_name ? profile.full_name : (userData.user.email || 'Owner');
+}
+
+async function checkExistingSession(){
+  var { data } = await supabaseClient.auth.getSession();
+  if (!(data && data.session) && AUTO_LOGIN_EMAIL.indexOf('PUT_') !== 0){
+    var res = await supabaseClient.auth.signInWithPassword({ email: AUTO_LOGIN_EMAIL, password: AUTO_LOGIN_PASSWORD });
+    if (!res.error) data = res.data;
+    else document.getElementById('loginError').textContent = 'Auto sign-in failed: ' + res.error.message;
+  }
+  if (!(data && data.session)){
+    var anon = await supabaseClient.auth.signInAnonymously();
+    if (!anon.error) data = anon.data;
+    else document.getElementById('loginError').textContent = 'Anonymous sign-in failed: ' + anon.error.message;
+  }
+  if (data && data.session){
+    await loadCurrentUserProfile();
+    document.getElementById('loginOverlay').style.display = 'none';
+    document.getElementById('mainLayout').style.display = 'flex';
+  }
+}
+
+async function logOut(){
+  await supabaseClient.auth.signOut();
+  currentUserName = null;
+  document.getElementById('mainLayout').style.display = 'none';
+  document.getElementById('loginOverlay').style.display = 'flex';
+  document.getElementById('login_email').value = '';
+  document.getElementById('login_password').value = '';
+}
+
+async function loadTeamMembers(){
+  const { data, error } = await supabaseClient.from('profiles').select('*').order('full_name');
+  var rows = document.getElementById('teamMembersRows');
+  rows.innerHTML = '';
+  if (error || !data || data.length === 0){
+    rows.innerHTML = '<tr><td colspan="2" class="note">No team members found.</td></tr>';
+    return;
+  }
+  data.forEach(function(p){
+    var tr = document.createElement('tr');
+    tr.innerHTML = '<td>'+(p.full_name || '—')+'</td><td>'+(p.email || '—')+'</td>';
+    rows.appendChild(tr);
+  });
+}
+
+document.querySelectorAll('.nav-btn').forEach(function(btn){
+  btn.addEventListener('click', function(){ if (btn.getAttribute('data-page')) goToPage(btn.getAttribute('data-page')); });
+});
+async function goToPage(pageId){
+  var currentActivePage = document.querySelector('.page.active');
+  if (currentActivePage && currentActivePage.id === 'page-costing-local' && pageId !== 'costing-local'){
+    var styleNameVal = document.getElementById('cs_styleName').value.trim();
+    var customerVal = document.getElementById('cs_customer').value;
+    var deptVal = document.getElementById('cs_department').value;
+    if (styleNameVal && customerVal && deptVal){
+      var currentStatus = document.getElementById('cs_versionBadge').textContent.indexOf('Submitted') !== -1 ? 'submitted' : 'draft';
+      await saveCostingSheet(currentStatus);
+    }
+  }
+  document.querySelectorAll('.nav-btn').forEach(function(b){ b.classList.remove('active'); });
+  document.querySelectorAll('.page').forEach(function(p){ p.classList.remove('active'); });
+  var navBtn = document.querySelector('.nav-btn[data-page="'+pageId+'"]');
+  if (navBtn) navBtn.classList.add('active');
+  var targetPage = document.getElementById('page-'+pageId);
+  if (!targetPage) return;
+  targetPage.classList.add('active');
+  if (pageId === 'master-fabric') loadFabrics();
+  if (pageId === 'master-customer') loadCustomers();
+  if (pageId === 'master-dept') loadDepartments();
+  if (pageId === 'master-sewing') loadSewing();
+  if (pageId === 'master-subprocess') loadSubprocess();
+  if (pageId === 'master-style') loadStyles();
+  if (pageId === 'master-recipients') loadRecipients();
+  if (pageId === 'team-members') loadTeamMembers();
+  if (pageId === 'costing-local') loadCostingForm();
+  if (pageId === 'summary') loadSummary();
+}
+
+var fabricsCache = [];
+async function loadFabrics(){
+  document.getElementById('fabricLoadStatus').textContent = 'Loading...';
+  const { data, error } = await supabaseClient.from('fabrics').select('*').order('name');
+  if (error){ document.getElementById('fabricLoadStatus').textContent = 'Error: ' + error.message; return; }
+  fabricsCache = data;
+  document.getElementById('fabricLoadStatus').textContent = fabricsCache.length + ' fabrics loaded.';
+  renderFabricTable();
+}
+function renderFabricTable(){
+  var q = (document.getElementById('fabricSearch').value || '').toLowerCase();
+  var filtered = fabricsCache.filter(function(f){ return f.name.toLowerCase().includes(q) || f.supplier.toLowerCase().includes(q); });
+  var rows = document.getElementById('fabricRows');
+  rows.innerHTML = '';
+  if (filtered.length === 0){ rows.innerHTML = '<tr><td colspan="9" class="note">No fabrics yet.</td></tr>'; return; }
+  filtered.forEach(function(f){
+    var colorCell = f.color_name ? f.color_name : '<span class="badge badge-warning">RFD</span>';
+    var uomLabel = f.purchase_unit === 'yard' ? 'Yard' : (f.purchase_unit === 'kg' ? 'Kilogram' : 'Meter');
+    var lastUpdated = f.updated_at ? new Date(f.updated_at).toLocaleDateString('en-GB', {day:'2-digit', month:'short', year:'numeric'}) : '—';
+    var isRecent = f.updated_at && ((Date.now() - new Date(f.updated_at).getTime()) < 7 * 24 * 60 * 60 * 1000);
+    var updateDot = isRecent ? '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--danger);margin-right:6px;vertical-align:middle" title="Updated recently"></span>' : '';
+    var tr = document.createElement('tr');
+    tr.innerHTML = '<td>'+updateDot+f.name+'</td><td>'+f.supplier+'</td><td>'+f.width_cm+'cm</td><td>'+colorCell+'</td><td>'+uomLabel+'</td><td>Rp '+Number(f.price_per_roll).toLocaleString('id-ID')+'</td><td>'+f.moq+'</td><td class="note">'+lastUpdated+'</td><td style="text-align:right;white-space:nowrap"><button class="small" onclick="openFabricHistory(\''+f.id+'\')">History</button> <button class="small" onclick="openEditFabric(\''+f.id+'\')">Edit</button></td>';
+    rows.appendChild(tr);
+  });
+}
+function openAddFabric(){
+  document.getElementById('fabricFormTitle').textContent = 'Add fabric';
+  document.getElementById('fabricFormTitle').style.display = 'block';
+  document.getElementById('fabricFormPanel').style.display = 'block';
+  document.getElementById('ff_id').value = '';
+  document.getElementById('ff_name').value = '';
+  document.getElementById('ff_supplier').value = '';
+  document.getElementById('ff_width').value = '';
+  document.getElementById('ff_color').value = '';
+  document.getElementById('ff_unit').value = 'yard';
+  document.getElementById('ff_moq').value = 'roll';
+  document.getElementById('ff_priceRoll').value = '';
+  document.getElementById('ff_priceRetail').value = '';
+  document.getElementById('ff_metersPerKg').value = '';
+  document.getElementById('ff_notes').value = '';
+  document.getElementById('fabricFormError').textContent = '';
+}
+function openEditFabric(id){
+  var f = fabricsCache.find(function(x){ return x.id === id; });
+  if (!f) return;
+  document.getElementById('fabricFormTitle').textContent = 'Edit — ' + f.name;
+  document.getElementById('fabricFormTitle').style.display = 'block';
+  document.getElementById('fabricFormPanel').style.display = 'block';
+  document.getElementById('ff_id').value = f.id;
+  document.getElementById('ff_name').value = f.name;
+  document.getElementById('ff_supplier').value = f.supplier;
+  document.getElementById('ff_width').value = f.width_cm;
+  document.getElementById('ff_color').value = f.color_name || '';
+  document.getElementById('ff_unit').value = f.purchase_unit;
+  document.getElementById('ff_moq').value = f.moq;
+  document.getElementById('ff_priceRoll').value = f.price_per_roll;
+  document.getElementById('ff_priceRetail').value = f.price_per_retail || '';
+  document.getElementById('ff_metersPerKg').value = f.meters_per_kg || '';
+  document.getElementById('ff_notes').value = f.notes || '';
+  document.getElementById('fabricFormError').textContent = '';
+}
+function closeFabricForm(){
+  document.getElementById('fabricFormPanel').style.display = 'none';
+  document.getElementById('fabricFormTitle').style.display = 'none';
+}
+async function openFabricHistory(fabricId){
+  var fabric = fabricsCache.find(function(f){ return f.id === fabricId; });
+  document.getElementById('fabricHistoryTitle').textContent = 'Price history — ' + (fabric ? fabric.name : '');
+  const { data, error } = await supabaseClient.from('fabric_price_history').select('*').eq('fabric_id', fabricId).order('changed_at', { ascending: false });
+  var rows = document.getElementById('fabricHistoryRows');
+  rows.innerHTML = '';
+  if (error || !data || data.length === 0){
+    rows.innerHTML = '<tr><td colspan="4" class="note">No previous versions yet — this is the first version.</td></tr>';
+  } else {
+    data.forEach(function(h){
+      var dateStr = new Date(h.changed_at).toLocaleDateString('en-GB', {day:'2-digit', month:'short', year:'numeric'});
+      var tr = document.createElement('tr');
+      tr.innerHTML = '<td>'+dateStr+'</td><td>Rp '+Number(h.price_per_roll).toLocaleString('id-ID')+'</td><td>'+h.width_cm+'cm</td><td>'+h.moq+'</td>';
+      rows.appendChild(tr);
+    });
+  }
+  document.getElementById('fabricHistoryOverlay').style.display = 'flex';
+}
+function closeFabricHistory(){
+  document.getElementById('fabricHistoryOverlay').style.display = 'none';
+}
+async function saveFabric(){
+  var id = document.getElementById('ff_id').value;
+  var record = {
+    name: document.getElementById('ff_name').value.trim(),
+    supplier: document.getElementById('ff_supplier').value.trim(),
+    width_cm: parseFloat(document.getElementById('ff_width').value) || 0,
+    color_name: document.getElementById('ff_color').value.trim() || null,
+    purchase_unit: document.getElementById('ff_unit').value,
+    moq: document.getElementById('ff_moq').value,
+    price_per_roll: parseFloat(document.getElementById('ff_priceRoll').value) || 0,
+    price_per_retail: parseFloat(document.getElementById('ff_priceRetail').value) || null,
+    meters_per_kg: parseFloat(document.getElementById('ff_metersPerKg').value) || null,
+    notes: document.getElementById('ff_notes').value.trim() || null,
+    updated_at: new Date().toISOString()
+  };
+  if (!record.name || !record.supplier){ document.getElementById('fabricFormError').textContent = 'Fabric name and supplier are required.'; return; }
+  if (id){
+    var oldFabric = fabricsCache.find(function(x){ return x.id === id; });
+    if (oldFabric){
+      await supabaseClient.from('fabric_price_history').insert({
+        fabric_id: id, name: oldFabric.name, supplier: oldFabric.supplier, width_cm: oldFabric.width_cm,
+        color_name: oldFabric.color_name, purchase_unit: oldFabric.purchase_unit, moq: oldFabric.moq,
+        price_per_roll: oldFabric.price_per_roll, price_per_retail: oldFabric.price_per_retail,
+        meters_per_kg: oldFabric.meters_per_kg, notes: oldFabric.notes, changed_at: oldFabric.updated_at || new Date().toISOString()
+      });
+    }
+  }
+  var error;
+  if (id){ var res = await supabaseClient.from('fabrics').update(record).eq('id', id); error = res.error; }
+  else { var res2 = await supabaseClient.from('fabrics').insert(record); error = res2.error; }
+  if (error){ document.getElementById('fabricFormError').textContent = 'Error: ' + error.message; return; }
+  alert('Fabric ' + (id ? 'updated' : 'added') + ' successfully!');
+  closeFabricForm(); loadFabrics();
+}
+
+var customersCache = [];
+async function loadCustomers(){
+  document.getElementById('customerLoadStatus').textContent = 'Loading...';
+  const { data, error } = await supabaseClient.from('customers').select('*').order('display_order').order('name');
+  if (error){ document.getElementById('customerLoadStatus').textContent = 'Error: ' + error.message; return; }
+  customersCache = data;
+  document.getElementById('customerLoadStatus').textContent = customersCache.length + ' customers loaded.';
+  renderCustomerTable();
+}
+function renderCustomerTable(){
+  var q = (document.getElementById('customerSearch').value || '').toLowerCase();
+  var filtered = customersCache.filter(function(c){ return c.name.toLowerCase().includes(q); });
+  var rows = document.getElementById('customerRows');
+  rows.innerHTML = '';
+  if (filtered.length === 0){ rows.innerHTML = '<tr><td colspan="6" class="note">No customers yet.</td></tr>'; return; }
+  filtered.forEach(function(c){
+    var statusBadge = c.is_active ? '<span class="badge badge-success">Active</span>' : '<span class="badge">Inactive</span>';
+    var tr = document.createElement('tr');
+    tr.innerHTML = '<td>'+c.name+'</td><td>'+(c.contact_person||'')+'</td><td>'+(c.email||'')+'</td><td>'+(c.phone||'')+'</td><td>'+statusBadge+'</td><td style="text-align:right"><button class="small" onclick="openEditCustomer(\''+c.id+'\')">Edit</button></td>';
+    rows.appendChild(tr);
+  });
+}
+function openAddCustomer(){
+  document.getElementById('customerFormTitle').textContent = 'Add customer';
+  document.getElementById('customerFormTitle').style.display = 'block';
+  document.getElementById('customerFormPanel').style.display = 'block';
+  document.getElementById('cf_id').value = '';
+  document.getElementById('cf_name').value = '';
+  document.getElementById('cf_contact').value = '';
+  document.getElementById('cf_email').value = '';
+  document.getElementById('cf_phone').value = '';
+  document.getElementById('cf_active').value = 'true';
+  document.getElementById('customerFormError').textContent = '';
+}
+function openEditCustomer(id){
+  var c = customersCache.find(function(x){ return x.id === id; });
+  if (!c) return;
+  document.getElementById('customerFormTitle').textContent = 'Edit — ' + c.name;
+  document.getElementById('customerFormTitle').style.display = 'block';
+  document.getElementById('customerFormPanel').style.display = 'block';
+  document.getElementById('cf_id').value = c.id;
+  document.getElementById('cf_name').value = c.name;
+  document.getElementById('cf_contact').value = c.contact_person || '';
+  document.getElementById('cf_email').value = c.email || '';
+  document.getElementById('cf_phone').value = c.phone || '';
+  document.getElementById('cf_active').value = c.is_active ? 'true' : 'false';
+  document.getElementById('customerFormError').textContent = '';
+}
+function closeCustomerForm(){
+  document.getElementById('customerFormPanel').style.display = 'none';
+  document.getElementById('customerFormTitle').style.display = 'none';
+}
+async function saveCustomer(){
+  var id = document.getElementById('cf_id').value;
+  var record = {
+    name: document.getElementById('cf_name').value.trim(),
+    contact_person: document.getElementById('cf_contact').value.trim() || null,
+    email: document.getElementById('cf_email').value.trim() || null,
+    phone: document.getElementById('cf_phone').value.trim() || null,
+    is_active: document.getElementById('cf_active').value === 'true'
+  };
+  if (!record.name){ document.getElementById('customerFormError').textContent = 'Customer name is required.'; return; }
+  var error;
+  if (id){ var res = await supabaseClient.from('customers').update(record).eq('id', id); error = res.error; }
+  else { var res2 = await supabaseClient.from('customers').insert(record); error = res2.error; }
+  if (error){ document.getElementById('customerFormError').textContent = 'Error: ' + error.message; return; }
+  closeCustomerForm(); loadCustomers();
+}
+
+var departmentsCache = [];
+var categoriesCache = [];
+async function loadDepartments(){
+  document.getElementById('deptLoadStatus').textContent = 'Loading...';
+  const deptRes = await supabaseClient.from('departments').select('*').order('name');
+  const catRes = await supabaseClient.from('categories').select('*').order('name');
+  if (deptRes.error){ document.getElementById('deptLoadStatus').textContent = 'Error: ' + deptRes.error.message; return; }
+  departmentsCache = deptRes.data;
+  categoriesCache = catRes.data;
+  document.getElementById('deptLoadStatus').textContent = departmentsCache.length + ' departments loaded.';
+  renderDeptCards();
+}
+function renderDeptCards(){
+  var container = document.getElementById('deptCards');
+  container.innerHTML = '';
+  departmentsCache.forEach(function(d){
+    var catsForDept = categoriesCache.filter(function(c){ return c.department_id === d.id; });
+    var catRows = catsForDept.map(function(c){ return '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)"><span>'+c.name+'</span></div>'; }).join('');
+    var card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = '<div style="display:flex;justify-content:space-between;margin-bottom:8px"><strong>'+d.name+'</strong><span>Markup <input type="number" value="'+d.markup_percent+'" style="width:60px" onchange="updateMarkup(\''+d.id+'\', this.value)"> %</span></div>' + catRows + '<div style="display:flex;gap:6px;margin-top:10px"><input placeholder="New category name" id="newcat-'+d.id+'" style="flex:1"><button class="small" onclick="addCategory(\''+d.id+'\')">Add</button></div>';
+    container.appendChild(card);
+  });
+  container.innerHTML += '<div class="card"><label>New department name</label><div style="display:flex;gap:8px"><input id="newDeptName" placeholder="e.g. Kids" style="flex:1"><input id="newDeptMarkup" type="number" placeholder="Markup %" style="width:100px"><button class="primary" onclick="addDepartment()">Add department</button></div></div>';
+}
+async function updateMarkup(deptId, value){
+  const { error } = await supabaseClient.from('departments').update({ markup_percent: parseFloat(value) }).eq('id', deptId);
+  if (error){ alert('Error: ' + error.message); }
+}
+async function addCategory(deptId){
+  var input = document.getElementById('newcat-' + deptId);
+  var name = input.value.trim();
+  if (!name) return;
+  const { error } = await supabaseClient.from('categories').insert({ department_id: deptId, name: name });
+  if (error){ alert('Error: ' + error.message); return; }
+  loadDepartments();
+}
+async function addDepartment(){
+  var name = document.getElementById('newDeptName').value.trim();
+  var markup = parseFloat(document.getElementById('newDeptMarkup').value) || 0;
+  if (!name) return;
+  const { error } = await supabaseClient.from('departments').insert({ name: name, markup_percent: markup });
+  if (error){ alert('Error: ' + error.message); return; }
+  loadDepartments();
+}
+
+var sewingCache = [];
+async function loadSewing(){
+  document.getElementById('sewingLoadStatus').textContent = 'Loading...';
+  const { data, error } = await supabaseClient.from('sewing_suppliers').select('*').order('name');
+  if (error){ document.getElementById('sewingLoadStatus').textContent = 'Error: ' + error.message; return; }
+  sewingCache = data;
+  document.getElementById('sewingLoadStatus').textContent = sewingCache.length + ' sewing suppliers loaded.';
+  renderSewingTable();
+}
+function renderSewingTable(){
+  var q = (document.getElementById('sewingSearch').value || '').toLowerCase();
+  var filtered = sewingCache.filter(function(s){ return s.name.toLowerCase().includes(q); });
+  var rows = document.getElementById('sewingRows');
+  rows.innerHTML = '';
+  if (filtered.length === 0){ rows.innerHTML = '<tr><td colspan="3" class="note">No sewing suppliers yet.</td></tr>'; return; }
+  filtered.forEach(function(s){
+    var statusBadge = s.is_active ? '<span class="badge badge-success">Active</span>' : '<span class="badge">Inactive</span>';
+    var tr = document.createElement('tr');
+    tr.innerHTML = '<td>'+s.name+'</td><td>'+statusBadge+'</td><td style="text-align:right"><button class="small" onclick="openEditSewing(\''+s.id+'\')">Edit</button></td>';
+    rows.appendChild(tr);
+  });
+}
+function openAddSewing(){
+  document.getElementById('sewingFormTitle').textContent = 'Add sewing supplier';
+  document.getElementById('sewingFormTitle').style.display = 'block';
+  document.getElementById('sewingFormPanel').style.display = 'block';
+  document.getElementById('sw_id').value = '';
+  document.getElementById('sw_name').value = '';
+  document.getElementById('sw_active').value = 'true';
+  document.getElementById('sewingFormError').textContent = '';
+}
+function openEditSewing(id){
+  var s = sewingCache.find(function(x){ return x.id === id; });
+  if (!s) return;
+  document.getElementById('sewingFormTitle').textContent = 'Edit — ' + s.name;
+  document.getElementById('sewingFormTitle').style.display = 'block';
+  document.getElementById('sewingFormPanel').style.display = 'block';
+  document.getElementById('sw_id').value = s.id;
+  document.getElementById('sw_name').value = s.name;
+  document.getElementById('sw_active').value = s.is_active ? 'true' : 'false';
+  document.getElementById('sewingFormError').textContent = '';
+}
+function closeSewingForm(){
+  document.getElementById('sewingFormPanel').style.display = 'none';
+  document.getElementById('sewingFormTitle').style.display = 'none';
+}
+async function saveSewing(){
+  var id = document.getElementById('sw_id').value;
+  var record = { name: document.getElementById('sw_name').value.trim(), is_active: document.getElementById('sw_active').value === 'true' };
+  if (!record.name){ document.getElementById('sewingFormError').textContent = 'Supplier name is required.'; return; }
+  var error;
+  if (id){ var res = await supabaseClient.from('sewing_suppliers').update(record).eq('id', id); error = res.error; }
+  else { var res2 = await supabaseClient.from('sewing_suppliers').insert(record); error = res2.error; }
+  if (error){ document.getElementById('sewingFormError').textContent = 'Error: ' + error.message; return; }
+  closeSewingForm(); loadSewing();
+}
+
+var subprocessCache = [];
+async function loadSubprocess(){
+  document.getElementById('subprocessLoadStatus').textContent = 'Loading...';
+  const { data, error } = await supabaseClient.from('subprocess_suppliers').select('*').order('subprocess_name').order('supplier');
+  if (error){ document.getElementById('subprocessLoadStatus').textContent = 'Error: ' + error.message; return; }
+  subprocessCache = data;
+  document.getElementById('subprocessLoadStatus').textContent = subprocessCache.length + ' subprocess suppliers loaded.';
+  renderSubprocessTable();
+}
+function renderSubprocessTable(){
+  var q = (document.getElementById('subprocessSearch').value || '').toLowerCase();
+  var filtered = subprocessCache.filter(function(s){ return s.subprocess_name.toLowerCase().includes(q) || s.supplier.toLowerCase().includes(q); });
+  var rows = document.getElementById('subprocessRows');
+  rows.innerHTML = '';
+  if (filtered.length === 0){ rows.innerHTML = '<tr><td colspan="4" class="note">No subprocess suppliers yet.</td></tr>'; return; }
+  filtered.forEach(function(s){
+    var statusBadge = s.is_active ? '<span class="badge badge-success">Active</span>' : '<span class="badge">Inactive</span>';
+    var tr = document.createElement('tr');
+    tr.innerHTML = '<td>'+s.subprocess_name+'</td><td>'+s.supplier+'</td><td>'+statusBadge+'</td><td style="text-align:right"><button class="small" onclick="openEditSubprocess(\''+s.id+'\')">Edit</button></td>';
+    rows.appendChild(tr);
+  });
+}
+function openAddSubprocess(){
+  document.getElementById('subprocessFormTitle').textContent = 'Add subprocess supplier';
+  document.getElementById('subprocessFormTitle').style.display = 'block';
+  document.getElementById('subprocessFormPanel').style.display = 'block';
+  document.getElementById('sp_id').value = '';
+  document.getElementById('sp_type').value = 'Printing';
+  document.getElementById('sp_supplier').value = '';
+  document.getElementById('sp_active').value = 'true';
+  document.getElementById('subprocessFormError').textContent = '';
+}
+function openEditSubprocess(id){
+  var s = subprocessCache.find(function(x){ return x.id === id; });
+  if (!s) return;
+  document.getElementById('subprocessFormTitle').textContent = 'Edit — ' + s.subprocess_name + ', ' + s.supplier;
+  document.getElementById('subprocessFormTitle').style.display = 'block';
+  document.getElementById('subprocessFormPanel').style.display = 'block';
+  document.getElementById('sp_id').value = s.id;
+  document.getElementById('sp_type').value = s.subprocess_name;
+  document.getElementById('sp_supplier').value = s.supplier;
+  document.getElementById('sp_active').value = s.is_active ? 'true' : 'false';
+  document.getElementById('subprocessFormError').textContent = '';
+}
+function closeSubprocessForm(){
+  document.getElementById('subprocessFormPanel').style.display = 'none';
+  document.getElementById('subprocessFormTitle').style.display = 'none';
+}
+async function saveSubprocess(){
+  var id = document.getElementById('sp_id').value;
+  var record = { subprocess_name: document.getElementById('sp_type').value, supplier: document.getElementById('sp_supplier').value.trim(), is_active: document.getElementById('sp_active').value === 'true' };
+  if (!record.supplier){ document.getElementById('subprocessFormError').textContent = 'Supplier name is required.'; return; }
+  var error;
+  if (id){ var res = await supabaseClient.from('subprocess_suppliers').update(record).eq('id', id); error = res.error; }
+  else { var res2 = await supabaseClient.from('subprocess_suppliers').insert(record); error = res2.error; }
+  if (error){ document.getElementById('subprocessFormError').textContent = 'Error: ' + error.message; return; }
+  closeSubprocessForm(); loadSubprocess();
+}
+
+var stylesCache = [];
+async function loadStyles(){
+  document.getElementById('styleLoadStatus').textContent = 'Loading...';
+  const { data, error } = await supabaseClient.from('styles').select('*').order('name');
+  if (error){ document.getElementById('styleLoadStatus').textContent = 'Error: ' + error.message; return; }
+  stylesCache = data;
+
+  const sheetsRes = await supabaseClient.from('costing_sheets').select('fabric_slots, variations(style_id)');
+  var sheetsData = sheetsRes.data || [];
+
+  stylesCache.forEach(function(style){
+    var fabricNames = [];
+    sheetsData.forEach(function(sheet){
+      if (sheet.variations && sheet.variations.style_id === style.id){
+        (sheet.fabric_slots || []).forEach(function(slot){
+          if (slot.fabric && fabricNames.indexOf(slot.fabric) === -1) fabricNames.push(slot.fabric);
+        });
+      }
+    });
+    style._fabricDisplay = fabricNames.length > 0 ? fabricNames.slice(0, 2).join(', ') + (fabricNames.length > 2 ? ' +' + (fabricNames.length - 2) : '') : '—';
+  });
+
+  document.getElementById('styleLoadStatus').textContent = stylesCache.length + ' styles loaded.';
+  renderStyleTable();
+}
+function renderStyleTable(){
+  var q = (document.getElementById('styleSearch').value || '').toLowerCase();
+  var filtered = stylesCache.filter(function(s){ return s.name.toLowerCase().includes(q); });
+  var rows = document.getElementById('styleRows');
+  rows.innerHTML = '';
+  if (filtered.length === 0){ rows.innerHTML = '<tr><td colspan="3" class="note">No styles yet.</td></tr>'; return; }
+  filtered.forEach(function(s){
+    var tr = document.createElement('tr');
+    tr.innerHTML = '<td>'+s.name+'</td><td>'+s._fabricDisplay+'</td><td></td>';
+    rows.appendChild(tr);
+  });
+}
+var recipientsCache = [];
+async function loadRecipients(){
+  document.getElementById('recipientLoadStatus').textContent = 'Loading...';
+  const { data, error } = await supabaseClient.from('recipients').select('*').order('name');
+  if (error){ document.getElementById('recipientLoadStatus').textContent = 'Error: ' + error.message; return; }
+  recipientsCache = data;
+  document.getElementById('recipientLoadStatus').textContent = recipientsCache.length + ' recipients loaded.';
+  renderRecipientTable();
+}
+function renderRecipientTable(){
+  var q = (document.getElementById('recipientSearch').value || '').toLowerCase();
+  var filtered = recipientsCache.filter(function(r){ return r.name.toLowerCase().includes(q) || r.email.toLowerCase().includes(q); });
+  var rows = document.getElementById('recipientRows');
+  rows.innerHTML = '';
+  if (filtered.length === 0){ rows.innerHTML = '<tr><td colspan="5" class="note">No recipients yet.</td></tr>'; return; }
+  filtered.forEach(function(r){
+    var statusBadge = r.is_active ? '<span class="badge badge-success">Active</span>' : '<span class="badge">Inactive</span>';
+    var tr = document.createElement('tr');
+    tr.innerHTML = '<td>'+r.name+'</td><td>'+r.email+'</td><td>'+(r.role||'')+'</td><td>'+statusBadge+'</td><td style="text-align:right"><button class="small" onclick="openEditRecipient(\''+r.id+'\')">Edit</button></td>';
+    rows.appendChild(tr);
+  });
+}
+function openAddRecipient(){
+  document.getElementById('recipientFormTitle').textContent = 'Add recipient';
+  document.getElementById('recipientFormTitle').style.display = 'block';
+  document.getElementById('recipientFormPanel').style.display = 'block';
+  document.getElementById('rc_id').value = '';
+  document.getElementById('rc_name').value = '';
+  document.getElementById('rc_email').value = '';
+  document.getElementById('rc_role').value = '';
+  document.getElementById('rc_active').value = 'true';
+  document.getElementById('recipientFormError').textContent = '';
+}
+function openEditRecipient(id){
+  var r = recipientsCache.find(function(x){ return x.id === id; });
+  if (!r) return;
+  document.getElementById('recipientFormTitle').textContent = 'Edit — ' + r.name;
+  document.getElementById('recipientFormTitle').style.display = 'block';
+  document.getElementById('recipientFormPanel').style.display = 'block';
+  document.getElementById('rc_id').value = r.id;
+  document.getElementById('rc_name').value = r.name;
+  document.getElementById('rc_email').value = r.email;
+  document.getElementById('rc_role').value = r.role || '';
+  document.getElementById('rc_active').value = r.is_active ? 'true' : 'false';
+  document.getElementById('recipientFormError').textContent = '';
+}
+function closeRecipientForm(){
+  document.getElementById('recipientFormPanel').style.display = 'none';
+  document.getElementById('recipientFormTitle').style.display = 'none';
+}
+async function saveRecipient(){
+  var id = document.getElementById('rc_id').value;
+  var record = { name: document.getElementById('rc_name').value.trim(), email: document.getElementById('rc_email').value.trim(), role: document.getElementById('rc_role').value.trim() || null, is_active: document.getElementById('rc_active').value === 'true' };
+  if (!record.name || !record.email){ document.getElementById('recipientFormError').textContent = 'Name and email are required.'; return; }
+  var error;
+  if (id){ var res = await supabaseClient.from('recipients').update(record).eq('id', id); error = res.error; }
+  else { var res2 = await supabaseClient.from('recipients').insert(record); error = res2.error; }
+  if (error){ document.getElementById('recipientFormError').textContent = 'Error: ' + error.message; return; }
+  closeRecipientForm(); loadRecipients();
+}
+var csImages = [];
+function renderCsImages(){
+  var row = document.getElementById('csImageRow');
+  row.innerHTML = '';
+  csImages.forEach(function(url, idx){
+    var wrap = document.createElement('div');
+    wrap.style.cssText = 'width:134px;height:134px;border-radius:8px;background-image:url(' + url + ');background-size:cover;background-position:center;position:relative;cursor:zoom-in';
+    wrap.addEventListener('click', function(e){ if (e.target.tagName !== 'BUTTON') openImageZoom(url); });
+    var delBtn = document.createElement('button');
+    delBtn.textContent = 'x';
+    delBtn.style.cssText = 'position:absolute;top:-6px;right:-6px;width:20px;height:20px;padding:0;border-radius:50%;font-size:11px;line-height:1';
+    delBtn.addEventListener('click', function(e){ e.stopPropagation(); removeCsImage(idx); });
+    wrap.appendChild(delBtn);
+    row.appendChild(wrap);
+  });
+  var pasteBox = document.createElement('div');
+  pasteBox.tabIndex = 0;
+  pasteBox.contentEditable = true;
+  pasteBox.style.cssText = 'width:134px;height:134px;border:1px dashed var(--border-strong);border-radius:8px;display:flex;align-items:center;justify-content:center;background:var(--surface-1);font-size:11px;color:var(--text-muted);text-align:center;cursor:pointer;padding:8px;outline:none;overflow:hidden';
+  pasteBox.textContent = 'Click, then paste';
+  pasteBox.addEventListener('paste', function(e){
+    e.preventDefault();
+    var items = (e.clipboardData || window.clipboardData).items;
+    for (var i = 0; i < items.length; i++){
+      if (items[i].kind === 'file' && items[i].type.indexOf('image') !== -1){
+        var blob = items[i].getAsFile();
+        if (!blob) continue;
+        var reader = new FileReader();
+        reader.onload = function(ev){ csImages.push(ev.target.result); renderCsImages(); };
+        reader.readAsDataURL(blob);
+      }
+    }
+  });
+  row.appendChild(pasteBox);
+}
+function openImageZoom(url){
+  var overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:9999;cursor:zoom-out';
+  overlay.addEventListener('click', function(){ overlay.remove(); });
+  var img = document.createElement('img');
+  img.src = url;
+  img.style.cssText = 'max-width:90%;max-height:90%;border-radius:8px';
+  overlay.appendChild(img);
+  document.body.appendChild(overlay);
+}
+function removeCsImage(idx){ csImages.splice(idx, 1); renderCsImages(); }
+
+function showRawFormula(input){ input.value = input.getAttribute('data-raw'); }
+function calcFormulaField(input){
+  var raw = input.value.trim();
+  input.setAttribute('data-raw', raw);
+  var expr = raw.charAt(0) === '=' ? raw.slice(1) : raw;
+  if (/^[0-9+\-*/().\s]+$/.test(expr) && expr.length > 0){
+    try {
+      var result = Function('"use strict"; return (' + expr + ')')();
+      input.value = Math.round(result).toLocaleString('id-ID');
+    } catch(err){ input.value = raw; }
+  } else { input.value = raw; }
+  calcCostingTotals();
+}
+
+function formatRowInput(input){
+  var raw = input.value.replace(/,/g, '').trim();
+  var num = parseFloat(raw);
+  if (!isNaN(num)){
+    var isConsp = input.classList.contains('rowConsp');
+    input.value = isConsp ? num.toFixed(2) : Math.round(num).toLocaleString('en-US');
+  }
+}
+
+function autoGrowInput(input){
+  var minWidth = input.id === 'cs_styleName' ? 60 : 40;
+  var length = input.value.length || input.placeholder.length;
+  input.style.width = Math.max(minWidth, length * 11 + 20) + 'px';
+}
+
+var fabricSlotCount = 0;
+var fabricSlots = {};
+var fourthSubprocessType = 'Tie-dye';
+var sewingMaxDefault = 0;
+var sewingSuppliersCache = [];
+var sewingLineCount = 0;
+var editingSheetId = null;
+
+function setFourthSubprocess(type){
+  fourthSubprocessType = type;
+  document.getElementById('fourthSubprocessHeader').textContent = type + '/m';
+  document.querySelectorAll('.fourthTypeBtn').forEach(function(btn){
+    var isActive = btn.getAttribute('data-type') === type;
+    btn.style.background = isActive ? 'var(--accent-bg)' : '';
+    btn.style.color = isActive ? 'var(--accent)' : '';
+  });
+}
+
+async function loadSewingQuotesForCosting(){
+  const { data, error } = await supabaseClient.from('sewing_suppliers').select('*').eq('is_active', true).order('name');
+  sewingSuppliersCache = (data && !error) ? data : [];
+  var picker = document.getElementById('sewingSupplierPicker');
+  if (sewingSuppliersCache.length === 0){
+    picker.innerHTML = '<option value="">No active suppliers</option>';
+    return;
+  }
+  picker.innerHTML = '<option value="">Select a supplier</option>' + sewingSuppliersCache.map(function(s){
+    return '<option value="'+s.name+'">'+s.name+'</option>';
+  }).join('');
+}
+
+function addSewingLine(){
+  var picker = document.getElementById('sewingSupplierPicker');
+  var name = picker.value;
+  if (!name) return;
+  sewingLineCount++;
+  var lineId = 'sewingLine' + sewingLineCount;
+  var tr = document.createElement('tr');
+  tr.id = lineId;
+  tr.innerHTML =
+    '<td>'+name+'</td>' +
+    '<td><input class="mini-input sewingLineMax" type="text" inputmode="decimal" value="0" style="width:80px" oninput="recalcSewingTotal()"></td>' +
+    '<td><input class="mini-input sewingLineNawar" type="text" inputmode="decimal" value="0" style="width:80px"></td>' +
+    '<td><button class="small" onclick="removeSewingLine(\''+lineId+'\')">x</button></td>';
+  document.getElementById('sewingLinesTable').appendChild(tr);
+  var maxInput = tr.querySelector('.sewingLineMax');
+  var nawarInput = tr.querySelector('.sewingLineNawar');
+  [maxInput, nawarInput].forEach(function(input){
+    input.addEventListener('focus', function(){ this.value = this.value.replace(/,/g, ''); });
+    input.addEventListener('blur', function(){ formatRowInput(this); recalcSewingTotal(); });
+    input.addEventListener('keydown', function(e){
+      if (e.key === 'Enter'){
+        e.preventDefault();
+        formatRowInput(this);
+        if (input === maxInput){ nawarInput.focus(); nawarInput.select(); }
+        else { this.blur(); }
+        recalcSewingTotal();
+      }
+    });
+  });
+  recalcSewingTotal();
+}
+
+function removeSewingLine(lineId){
+  var el = document.getElementById(lineId);
+  if (el) el.remove();
+  recalcSewingTotal();
+}
+
+function recalcSewingTotal(){
+  var rows = Array.from(document.getElementById('sewingLinesTable').querySelectorAll('tr'));
+  var total = 0;
+  rows.forEach(function(tr){
+    var maxInput = tr.querySelector('.sewingLineMax');
+    if (!maxInput) return;
+    total += parseFloat(maxInput.value.replace(/,/g, '')) || 0;
+  });
+  sewingMaxDefault = total;
+  if (!document.getElementById('cs_sewing').getAttribute('data-touched')){
+    document.getElementById('cs_sewing').value = total.toLocaleString('en-US');
+    calcCostingTotals();
+  }
+}
+function resetGivenPrice(){
+  document.getElementById('cs_givenPrice').removeAttribute('data-touched');
+  calcCostingTotals();
+}
+function resetSewingCost(){
+  document.getElementById('cs_sewing').removeAttribute('data-touched');
+  document.getElementById('cs_sewing').value = sewingMaxDefault.toLocaleString('en-US');
+  calcCostingTotals();
+}
+
+function openCopyToCustomer(){
+  var select = document.getElementById('copyToCustomerSelect');
+  select.innerHTML = customersCache.map(function(c){ return '<option value="'+c.id+'">'+c.name+'</option>'; }).join('');
+  document.getElementById('copyToCustomerOverlay').style.display = 'flex';
+}
+function closeCopyToCustomer(){
+  document.getElementById('copyToCustomerOverlay').style.display = 'none';
+}
+async function confirmCopyToCustomer(){
+  var newCustomerId = document.getElementById('copyToCustomerSelect').value;
+  document.getElementById('cs_customer').value = newCustomerId;
+  editingSheetId = null;
+  closeCopyToCustomer();
+  await saveCostingSheet('draft');
+}
+
+function duplicateCurrentSheet(){
+  editingSheetId = null;
+  document.getElementById('cs_versionBadge').textContent = 'V1 · Draft';
+  document.getElementById('cs_isOrdered').checked = false;
+  document.getElementById('cs_priceAlertBanner').style.display = 'none';
+  document.getElementById('cs_duplicateBtn').style.display = 'none';
+  alert('This is now a duplicate — Style name and Colour are editable if needed. Click "Save as draft" or "Submit" to create it as a brand new costing sheet.');
+}
+
+var recognizedGarmentSizes = ['XXS','XS','S','M','L','XL','XXL','XS/S','S/M','M/L','L/XL','4','6','8','10','12','14','16','18','20','37','38','39','40','41','42','OS'];
+
+function slotUsesGarmentSizes(slotId){
+  if (fabricSlots[slotId].mode !== 'per_meter') return false;
+  var sizes = fabricSlots[slotId].sizes || [];
+  if (sizes.length === 0) return false;
+  return sizes.every(function(s){ return recognizedGarmentSizes.indexOf(String(s)) !== -1; });
+}
+
+function getAllSizesAcrossSlots(){
+  var allSizes = [];
+  Object.keys(fabricSlots).forEach(function(slotId){
+    if (slotUsesGarmentSizes(slotId)){
+      (fabricSlots[slotId].sizes || []).forEach(function(size){
+        if (allSizes.indexOf(size) === -1) allSizes.push(size);
+      });
+    }
+  });
+  return allSizes;
+}
+
+function openOrderCalculator(){
+  document.getElementById('orderCalcOverlay').style.display = 'flex';
+  renderOrderCalculator();
+}
+function closeOrderCalculator(){
+  document.getElementById('orderCalcOverlay').style.display = 'none';
+}
+
+function renderOrderCalculator(){
+  var container = document.getElementById('orderCalcContainer');
+  var sizes = getAllSizesAcrossSlots();
+  var fabricsInSheet = [];
+  Object.keys(fabricSlots).forEach(function(slotId){
+    var card = document.getElementById(slotId);
+    if (!card) return;
+    var fabricName = card.querySelector('.slotFabric').value;
+    fabricsInSheet.push({ slotId: slotId, name: fabricName, mode: fabricSlots[slotId].mode });
+  });
+  if (fabricsInSheet.length === 0){
+    container.innerHTML = '<p class="note">Add at least one fabric to use the order calculator.</p>';
+    return;
+  }
+  var existingQtys = {};
+  document.querySelectorAll('.orderQtyInput').forEach(function(input){
+    existingQtys[input.getAttribute('data-size')] = input.value;
+  });
+  var tableHtml = '<table><tr><th>Size</th><th>Qty</th>';
+  fabricsInSheet.forEach(function(f){
+    tableHtml += '<th>'+f.name+' cons.</th><th>'+f.name+' total</th>';
+  });
+  tableHtml += '</tr>';
+  if (sizes.length === 0){
+    tableHtml += '<tr><td>Bulk qty</td><td><input class="mini-input orderQtyInput" data-size="Bulk qty" type="text" inputmode="decimal" value="'+(existingQtys['Bulk qty'] !== undefined ? existingQtys['Bulk qty'] : '0')+'" oninput="calcOrderCalculator()" onkeydown="handleOrderQtyEnter(event, this)"></td>';
+    fabricsInSheet.forEach(function(f){
+      tableHtml += '<td class="orderConsCell" data-size="Bulk qty" data-slot="'+f.slotId+'"></td>';
+      tableHtml += '<td class="orderTotalCell" data-size="Bulk qty" data-slot="'+f.slotId+'"></td>';
+    });
+    tableHtml += '</tr>';
+  }
+  sizes.forEach(function(size){
+    var qtyVal = existingQtys[size] !== undefined ? existingQtys[size] : '0';
+    tableHtml += '<tr><td>'+size+'</td><td><input class="mini-input orderQtyInput" data-size="'+size+'" type="text" inputmode="decimal" value="'+qtyVal+'" oninput="calcOrderCalculator()" onkeydown="handleOrderQtyEnter(event, this)"></td>';
+    fabricsInSheet.forEach(function(f){
+      tableHtml += '<td class="orderConsCell" data-size="'+size+'" data-slot="'+f.slotId+'"></td>';
+      tableHtml += '<td class="orderTotalCell" data-size="'+size+'" data-slot="'+f.slotId+'"></td>';
+    });
+    tableHtml += '</tr>';
+  });
+  tableHtml += '<tr style="font-weight:500"><td>Total net</td><td class="orderQtyTotal"></td>';
+  fabricsInSheet.forEach(function(f){
+    tableHtml += '<td></td><td class="orderNetTotal" data-slot="'+f.slotId+'"></td>';
+  });
+  tableHtml += '</tr>';
+  tableHtml += '<tr style="font-weight:500"><td>Total + shrinkage</td><td></td>';
+  fabricsInSheet.forEach(function(f){
+    tableHtml += '<td class="orderShrinkagePct" data-slot="'+f.slotId+'" style="color:var(--text-muted)"></td><td class="orderShrinkageTotal" data-slot="'+f.slotId+'"></td>';
+  });
+  tableHtml += '</tr></table>';
+  container.innerHTML = tableHtml;
+  calcOrderCalculator();
+}
+
+function handleOrderQtyEnter(e, input){
+  if (e.key === 'Enter'){
+    e.preventDefault();
+    var allQtyInputs = Array.from(document.querySelectorAll('.orderQtyInput'));
+    var idx = allQtyInputs.indexOf(input);
+    var next = allQtyInputs[idx + 1];
+    if (next){ next.focus(); next.select(); } else { input.blur(); }
+  }
+}
+
+function calcOrderCalculator(){
+  var sizes = getAllSizesAcrossSlots();
+  var qtys = {};
+  var totalQty = 0;
+  document.querySelectorAll('.orderQtyInput').forEach(function(input){
+    var val = parseFloat(input.value) || 0;
+    qtys[input.getAttribute('data-size')] = val;
+    totalQty += val;
+  });
+  var qtyTotalCell = document.querySelector('.orderQtyTotal');
+  if (qtyTotalCell) qtyTotalCell.textContent = totalQty;
+  Object.keys(fabricSlots).forEach(function(slotId){
+    var card = document.getElementById(slotId);
+    if (!card) return;
+    if (slotUsesGarmentSizes(slotId)){
+      var formulaInputs = card.querySelectorAll('.slotFormula');
+      var perSizeCons = {};
+      formulaInputs.forEach(function(input){
+        var size = input.getAttribute('data-size');
+        var resultCell = input.closest('tr').querySelector('.slotResult');
+        perSizeCons[size] = parseFloat(resultCell.textContent) || 0;
+      });
+      var netTotal = 0;
+      sizes.forEach(function(size){
+        var cons = perSizeCons[size] !== undefined ? perSizeCons[size] : 0;
+        var qty = qtys[size] || 0;
+        var lineTotal = cons * qty;
+        netTotal += lineTotal;
+        var consCell = document.querySelector('.orderConsCell[data-size="'+size+'"][data-slot="'+slotId+'"]');
+        var totalCell = document.querySelector('.orderTotalCell[data-size="'+size+'"][data-slot="'+slotId+'"]');
+        if (consCell) consCell.textContent = perSizeCons[size] !== undefined ? cons.toFixed(2) : '—';
+        if (totalCell) totalCell.textContent = perSizeCons[size] !== undefined ? lineTotal.toFixed(2) : '—';
+      });
+      var shrinkageEl = card.querySelector('.slotShrinkage');
+      var shrinkagePct = shrinkageEl ? (parseFloat(shrinkageEl.value) || 0) : 0;
+      var withShrinkage = netTotal * (1 + shrinkagePct/100);
+      var netCell = document.querySelector('.orderNetTotal[data-slot="'+slotId+'"]');
+      var pctCell = document.querySelector('.orderShrinkagePct[data-slot="'+slotId+'"]');
+      var shrCell = document.querySelector('.orderShrinkageTotal[data-slot="'+slotId+'"]');
+      if (netCell) netCell.textContent = netTotal.toFixed(2);
+      if (pctCell) pctCell.textContent = shrinkagePct + '%';
+      if (shrCell) shrCell.textContent = withShrinkage.toFixed(2);
+    } else {
+      sizes.forEach(function(size){
+        var consCell = document.querySelector('.orderConsCell[data-size="'+size+'"][data-slot="'+slotId+'"]');
+        var totalCell = document.querySelector('.orderTotalCell[data-size="'+size+'"][data-slot="'+slotId+'"]');
+        if (consCell) consCell.textContent = '(bulk)';
+        if (totalCell) totalCell.textContent = '—';
+      });
+      var isPanelMode = fabricSlots[slotId].mode === 'panel';
+      var usedPanelVal = 0;
+      if (isPanelMode){
+        var usedPanelDisplay = card.querySelector('.slotUsedPanelDisplay');
+        usedPanelVal = usedPanelDisplay ? (parseFloat(usedPanelDisplay.textContent) || 0) : 0;
+      } else {
+        var afterDisplay = card.querySelector('.slotAfterDisplay');
+        usedPanelVal = afterDisplay ? (parseFloat(afterDisplay.textContent) || 0) : 0;
+      }
+      var panelNetTotal = usedPanelVal * totalQty;
+      var netCell2 = document.querySelector('.orderNetTotal[data-slot="'+slotId+'"]');
+      var pctCell2 = document.querySelector('.orderShrinkagePct[data-slot="'+slotId+'"]');
+      var shrCell2 = document.querySelector('.orderShrinkageTotal[data-slot="'+slotId+'"]');
+      if (netCell2) netCell2.textContent = panelNetTotal.toFixed(2) + (isPanelMode ? ' (panel, already incl. shrinkage)' : ' (bulk qty, already incl. shrinkage)');
+      if (pctCell2) pctCell2.textContent = '—';
+      if (shrCell2) shrCell2.textContent = panelNetTotal.toFixed(2);
+    }
+  });
+}
+
+async function loadCostingForm(){
+  const custRes = await supabaseClient.from('customers').select('*').order('display_order').order('name');
+  const deptRes = await supabaseClient.from('departments').select('*').order('name');
+  const catRes = await supabaseClient.from('categories').select('*').order('name');
+  const recRes = await supabaseClient.from('recipients').select('*').order('name');
+  const fabRes = await supabaseClient.from('fabrics').select('*').order('name');
+  customersCache = custRes.data || [];
+  departmentsCache = deptRes.data || [];
+  categoriesCache = catRes.data || [];
+  recipientsCache = recRes.data || [];
+  fabricsCache = fabRes.data || [];
+  document.getElementById('cs_customer').innerHTML = customersCache.map(function(c){ return '<option value="'+c.id+'">'+c.name+'</option>'; }).join('');
+  document.getElementById('cs_department').innerHTML = departmentsCache.map(function(d){ return '<option value="'+d.id+'" data-markup="'+d.markup_percent+'">'+d.name+'</option>'; }).join('');
+  populateCategoryOptions();
+  updateMarkupDisplay();
+  document.getElementById('cs_requester').innerHTML = recipientsCache.map(function(r){ return '<option value="'+r.name+'">'+r.name+'</option>'; }).join('');
+  document.getElementById('cs_requestDate').value = new Date().toISOString().split('T')[0];
+  csImages = [];
+  renderCsImages();
+  await loadSewingQuotesForCosting();
+  document.getElementById('sewingLinesTable').innerHTML = '';
+  sewingLineCount = 0;
+  document.getElementById('cs_styleName').value = '';
+  document.getElementById('cs_colour').value = '';
+  document.getElementById('cs_notes').value = '';
+  document.getElementById('cs_additionalInfo').value = '';
+  document.getElementById('cs_givenPrice').removeAttribute('data-touched');
+  document.getElementById('cs_givenPrice').value = '0';
+  document.getElementById('cs_versionBadge').textContent = 'V1 · Draft';
+  document.getElementById('cs_isOrdered').checked = false;
+  document.getElementById('cs_priceAlertBanner').style.display = 'none';
+  document.getElementById('cs_duplicateBtn').style.display = 'none';
+  document.getElementById('cs_sewing').removeAttribute('data-touched');
+  editingSheetId = null;
+  fabricSlotCount = 0;
+  fabricSlots = {};
+  document.getElementById('fabricSlotsContainer').innerHTML = '';
+  document.getElementById('fabricCostRows').innerHTML = '';
+  setFourthSubprocess('Tie-dye');
+  addFabricSlot();
+}
+
+function populateCategoryOptions(){
+  var deptId = document.getElementById('cs_department').value;
+  var matches = categoriesCache.filter(function(c){ return c.department_id === deptId; });
+  document.getElementById('cs_categoryList').innerHTML = matches.map(function(c){ return '<option value="'+c.name+'">'; }).join('');
+  document.getElementById('cs_category').value = '';
+}
+
+function updateMarkupDisplay(){
+  var deptSelect = document.getElementById('cs_department');
+  var selected = deptSelect.options[deptSelect.selectedIndex];
+  document.getElementById('cs_markup').value = selected ? selected.getAttribute('data-markup') : 0;
+  calcCostingTotals();
+}
+
+function addFabricSlot(){
+  fabricSlotCount++;
+  var slotId = 'slot' + fabricSlotCount;
+  fabricSlots[slotId] = { mode: 'per_meter', sizes: ['S'], formulas: {} };
+  var uniqueFabricNames = [];
+  fabricsCache.forEach(function(f){ if (uniqueFabricNames.indexOf(f.name) === -1) uniqueFabricNames.push(f.name); });
+  var card = document.createElement('div');
+  card.className = 'card';
+  card.id = slotId;
+  card.innerHTML =
+    '<div class="grid-2" style="margin-bottom:8px">' +
+      '<div><label>Fabric</label><select class="slotFabric" onchange="populateSlotColors(\''+slotId+'\')">' + uniqueFabricNames.map(function(n){ return '<option value="'+n+'">'+n+'</option>'; }).join('') + '</select></div>' +
+      '<div><label>Colour</label><select class="slotColour" onchange="calcCostingTotals()"></select></div>' +
+    '</div>' +
+    '<div style="margin-bottom:8px">' +
+      '<button class="small" onclick="setSlotMode(\''+slotId+'\', \'panel\')" id="'+slotId+'_panelBtn">Panel</button> ' +
+      '<button class="small" onclick="setSlotMode(\''+slotId+'\', \'per_meter\')" id="'+slotId+'_meterBtn" style="background:var(--accent-bg);color:var(--accent)">Per meter</button>' +
+    '</div>' +
+    '<div id="'+slotId+'_content"></div>' +
+    '<button class="small" onclick="removeFabricSlot(\''+slotId+'\')" style="margin-top:8px">Remove fabric</button>';
+  document.getElementById('fabricSlotsContainer').appendChild(card);
+  populateSlotColors(slotId);
+  renderSlotContent(slotId);
+}
+
+function populateSlotColors(slotId){
+  var card = document.getElementById(slotId);
+  var fabricName = card.querySelector('.slotFabric').value;
+  var colourSelect = card.querySelector('.slotColour');
+  var matches = fabricsCache.filter(function(f){ return f.name === fabricName; });
+  colourSelect.innerHTML = matches.map(function(f){
+    var label = f.color_name || 'RFD';
+    return '<option value="'+label+'" data-price="'+f.price_per_roll+'" data-unit="'+f.purchase_unit+'">'+label+'</option>';
+  }).join('');
+  calcCostingTotals();
+}
+
+function setSlotMode(slotId, mode){
+  fabricSlots[slotId].mode = mode;
+  document.getElementById(slotId+'_panelBtn').style.background = mode === 'panel' ? 'var(--accent-bg)' : '';
+  document.getElementById(slotId+'_panelBtn').style.color = mode === 'panel' ? 'var(--accent)' : '';
+  document.getElementById(slotId+'_meterBtn').style.background = mode === 'per_meter' ? 'var(--accent-bg)' : '';
+  document.getElementById(slotId+'_meterBtn').style.color = mode === 'per_meter' ? 'var(--accent)' : '';
+  renderSlotContent(slotId);
+}
+
+function renderSlotContent(slotId){
+  var mode = fabricSlots[slotId].mode;
+  var container = document.getElementById(slotId+'_content');
+  if (mode === 'per_meter'){
+    if (!fabricSlots[slotId].sizes) fabricSlots[slotId].sizes = ['S'];
+    var pickerOptionsAlpha = ['XXS','XS','S','M','L','XL','XXL'].map(function(s){ return '<option>'+s+'</option>'; }).join('');
+    var pickerOptionsCombo = ['XS/S','S/M','M/L','L/XL'].map(function(s){ return '<option>'+s+'</option>'; }).join('');
+    var pickerOptionsNum = [4,6,8,10,12,14,16,18,20].map(function(s){ return '<option>'+s+'</option>'; }).join('');
+    var pickerOptionsShoe = [37,38,39,40,41,42].map(function(s){ return '<option>'+s+'</option>'; }).join('');
+    container.innerHTML =
+      '<div id="'+slotId+'_sizeTable"></div>' +
+      '<div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap">' +
+        '<select id="'+slotId+'_sizePicker" style="width:auto">' +
+          '<optgroup label="Alpha">' + pickerOptionsAlpha + '</optgroup>' +
+          '<optgroup label="Combo">' + pickerOptionsCombo + '</optgroup>' +
+          '<optgroup label="Numeric">' + pickerOptionsNum + '</optgroup>' +
+          '<optgroup label="Shoe">' + pickerOptionsShoe + '</optgroup>' +
+          '<option>OS</option>' +
+        '</select>' +
+        '<button class="small" onclick="addSizeRow(\''+slotId+'\')">+ Add size</button>' +
+        '<input type="text" id="'+slotId+'_customLabel" placeholder="or custom name (e.g. Leher)" style="width:140px">' +
+        '<button class="small" onclick="addCustomSizeRow(\''+slotId+'\')">+ Add custom</button>' +
+      '</div>' +
+      '<div class="grid-3" style="margin-top:6px">' +
+        '<div><label>Total (m)</label><div class="slotTotalDisplay" style="font-size:12px;padding:7px 0">0.00</div></div>' +
+        '<div><label>Average (m)</label><div class="slotAvgDisplay" style="font-size:12px;padding:7px 0">0.00</div></div>' +
+        '<div><label>Shrinkage %</label><input type="number" class="slotShrinkage" value="7" oninput="calcCostingTotals()"></div>' +
+      '</div>' +
+      '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-secondary);margin-top:4px"><span>Avg before shrinkage</span><strong class="slotBeforeDisplay">0.00m</strong></div>' +
+      '<div style="display:flex;justify-content:space-between;font-size:12px;font-weight:500"><span>Gross consp. (after shrinkage)</span><strong class="slotAfterDisplay">0.00m</strong></div>';
+    renderSizeRows(slotId);
+  } else {
+    container.innerHTML =
+      '<div style="margin-bottom:6px"><label>Net panel (m)</label><input type="text" inputmode="decimal" class="slotNetPanel" value="1.20" oninput="calcCostingTotals()"></div>' +
+      '<div class="grid-2" style="margin-bottom:6px">' +
+        '<div><label>Allowance (m)</label><input type="text" inputmode="decimal" class="slotAllowance" value="0.01" oninput="calcCostingTotals()"></div>' +
+        '<div><label>Shrinkage %</label><input type="number" class="slotPanelShrinkage" value="7" oninput="calcCostingTotals()"></div>' +
+      '</div>' +
+      '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-secondary);margin-bottom:6px"><span>Gross panel (auto)</span><strong class="slotGrossDisplay">0.00m</strong></div>' +
+      '<div style="margin-bottom:6px"><label>Panel instruction (e.g. "2 panel cut 3")</label><input type="text" class="slotPanelInstruction" value="2 panel cut 3" oninput="calcCostingTotals()"></div>' +
+      '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-secondary)"><span class="slotFormulaDisplay">formula</span><strong class="slotUsedPanelDisplay">0.00m</strong></div>';
+  }
+  calcCostingTotals();
+}
+
+function addCustomSizeRow(slotId){
+  var input = document.getElementById(slotId+'_customLabel');
+  var label = input.value.trim();
+  if (!label) return;
+  if (fabricSlots[slotId].sizes.indexOf(label) !== -1) return;
+  fabricSlots[slotId].sizes.push(label);
+  input.value = '';
+  renderSizeRows(slotId);
+  calcCostingTotals();
+}
+
+function addSizeRow(slotId){
+  var picker = document.getElementById(slotId+'_sizePicker');
+  var size = picker.value;
+  if (fabricSlots[slotId].sizes.indexOf(size) !== -1) return;
+  fabricSlots[slotId].sizes.push(size);
+  renderSizeRows(slotId);
+  calcCostingTotals();
+}
+
+function removeSizeRow(slotId, size){
+  fabricSlots[slotId].sizes = fabricSlots[slotId].sizes.filter(function(s){ return s !== size; });
+  renderSizeRows(slotId);
+  calcCostingTotals();
+}
+
+function renderSizeRows(slotId){
+  var sizes = fabricSlots[slotId].sizes;
+  if (!fabricSlots[slotId].formulas) fabricSlots[slotId].formulas = {};
+  var savedFormulas = fabricSlots[slotId].formulas;
+  var tableHtml = '<table style="margin-bottom:8px"><tr><th>Size</th><th>Formula</th><th>Result (m)</th><th></th></tr>';
+  sizes.forEach(function(size){
+    var savedValue = savedFormulas[size] || '2.5 cut 1.5';
+    tableHtml +=
+      '<tr><td>'+size+'</td>' +
+      '<td><input class="mini-input slotFormula" data-size="'+size+'" value="'+savedValue+'" oninput="calcSlotResult(this);saveSlotFormula(\''+slotId+'\',this)" onkeydown="handleSlotEnterKey(event, this)" style="width:100px"></td>' +
+      '<td class="slotResult">1.67</td>' +
+      '<td><button class="small" onclick="removeSizeRow(\''+slotId+'\',\''+size+'\')">x</button></td></tr>';
+  });
+  tableHtml += '</table>';
+  document.getElementById(slotId+'_sizeTable').innerHTML = tableHtml;
+  document.getElementById(slotId+'_sizeTable').querySelectorAll('.slotFormula').forEach(function(input){ calcSlotResult(input); });
+}
+
+function saveSlotFormula(slotId, input){
+  if (!fabricSlots[slotId].formulas) fabricSlots[slotId].formulas = {};
+  var size = input.getAttribute('data-size');
+  fabricSlots[slotId].formulas[size] = input.value;
+}
+
+function calcSlotResult(input){
+  var resultCell = input.closest('tr').querySelector('.slotResult');
+  var value = input.value.trim();
+  var cutMatch = value.match(/([\d.]+)\s*cut\s*([\d.]+)/i);
+  var plainMatch = value.match(/^([\d.]+)$/);
+  if (cutMatch){ resultCell.textContent = (parseFloat(cutMatch[1]) / parseFloat(cutMatch[2])).toFixed(2); }
+  else if (plainMatch){ resultCell.textContent = parseFloat(plainMatch[1]).toFixed(2); }
+  else { resultCell.textContent = '—'; }
+  calcCostingTotals();
+}
+
+function handleSlotEnterKey(e, input){
+  if (e.key === 'Enter'){
+    e.preventDefault();
+    var card = input.closest('.card');
+    var allFormulaInputs = Array.from(card.querySelectorAll('.slotFormula'));
+    var idx = allFormulaInputs.indexOf(input);
+    var next = allFormulaInputs[idx + 1];
+    if (next){ next.focus(); next.select(); } else { input.blur(); }
+  }
+}
+
+function removeFabricSlot(slotId){
+  delete fabricSlots[slotId];
+  document.getElementById(slotId).remove();
+  var costRow = document.getElementById('costrow_' + slotId);
+  if (costRow) costRow.remove();
+  calcCostingTotals();
+}
+
+function ceilToStep(value, step){ return Math.ceil(value / step) * step; }
+
+function calcPerMeterSlot(card){
+  var results = [];
+  var resultEls = card.querySelectorAll('.slotResult');
+  for (var i = 0; i < resultEls.length; i++){ results.push(parseFloat(resultEls[i].textContent) || 0); }
+  var total = 0;
+  for (var j = 0; j < results.length; j++){ total = total + results[j]; }
+  var avg = total / (results.length || 1);
+  var shrinkageEl = card.querySelector('.slotShrinkage');
+  if (!shrinkageEl) return 0;
+  var shrinkage = parseFloat(shrinkageEl.value) || 0;
+  var afterShrinkage = avg * (1 + shrinkage / 100);
+  var totalDisplay = card.querySelector('.slotTotalDisplay');
+  var avgDisplay = card.querySelector('.slotAvgDisplay');
+  var beforeDisplay = card.querySelector('.slotBeforeDisplay');
+  var afterDisplay = card.querySelector('.slotAfterDisplay');
+  if (totalDisplay) totalDisplay.textContent = total.toFixed(2);
+  if (avgDisplay) avgDisplay.textContent = avg.toFixed(2);
+  if (beforeDisplay) beforeDisplay.textContent = avg.toFixed(2) + 'm';
+  if (afterDisplay) afterDisplay.textContent = afterShrinkage.toFixed(2) + 'm';
+  return afterShrinkage;
+}
+
+function calcPanelSlot(card){
+  var netPanelEl = card.querySelector('.slotNetPanel');
+  var allowanceEl = card.querySelector('.slotAllowance');
+  var panelShrinkageEl = card.querySelector('.slotPanelShrinkage');
+  var instructionEl = card.querySelector('.slotPanelInstruction');
+  if (!netPanelEl || !allowanceEl || !panelShrinkageEl || !instructionEl) return 0;
+  var netPanel = parseFloat(netPanelEl.value) || 0;
+  var allowance = parseFloat(allowanceEl.value) || 0;
+  var panelShrinkage = parseFloat(panelShrinkageEl.value) || 0;
+  var gross = (netPanel + allowance) * (1 + panelShrinkage / 100);
+  var grossDisplay = card.querySelector('.slotGrossDisplay');
+  if (grossDisplay) grossDisplay.textContent = gross.toFixed(2) + 'm';
+  var instruction = instructionEl.value;
+  var match = instruction.match(/(\d+)\s*panel\s*cut\s*(\d+)/i);
+  var formulaDisplay = card.querySelector('.slotFormulaDisplay');
+  var usedPanelDisplay = card.querySelector('.slotUsedPanelDisplay');
+  var consumption = 0;
+  if (match){
+    var panelCount = parseFloat(match[1]);
+    var cutCount = parseFloat(match[2]);
+    consumption = (gross * panelCount) / cutCount;
+    if (formulaDisplay) formulaDisplay.textContent = '(' + gross.toFixed(2) + ' x ' + panelCount + ') / ' + cutCount;
+    if (usedPanelDisplay) usedPanelDisplay.textContent = consumption.toFixed(2) + 'm';
+  } else {
+    if (formulaDisplay) formulaDisplay.textContent = 'Invalid instruction';
+    if (usedPanelDisplay) usedPanelDisplay.textContent = '-';
+  }
+  return consumption;
+}
+
+function getOrCreateCostRow(slotId){
+  var existingRow = document.getElementById('costrow_' + slotId);
+  if (existingRow) return existingRow;
+  var tr = document.createElement('tr');
+  tr.id = 'costrow_' + slotId;
+  tr.innerHTML =
+    '<td class="rowFabricName"></td><td class="rowColour"></td><td class="rowPriceM"></td>' +
+    '<td><input class="mini-input rowWashing" type="text" inputmode="decimal" value="0"></td>' +
+    '<td><input class="mini-input rowDyeing" type="text" inputmode="decimal" value="0"></td>' +
+    '<td><input class="mini-input rowPrinting" type="text" inputmode="decimal" value="0"></td>' +
+    '<td><input class="mini-input rowTiedye" type="text" inputmode="decimal" value="0"></td>' +
+    '<td><input class="mini-input rowConsp" type="text" inputmode="decimal" value="0"></td>' +
+    '<td class="rowCost"></td>';
+  document.getElementById('fabricCostRows').appendChild(tr);
+  var rowInputs = ['rowWashing','rowDyeing','rowPrinting','rowTiedye','rowConsp'];
+  rowInputs.forEach(function(cls, idx){
+    var el = tr.querySelector('.'+cls);
+    el.addEventListener('input', function(){
+      if (cls === 'rowConsp') el.setAttribute('data-touched', '1');
+      calcCostingTotals();
+    });
+    el.addEventListener('focus', function(){ this.value = this.value.replace(/,/g, ''); });
+    el.addEventListener('blur', function(){ formatRowInput(this); });
+    el.addEventListener('keydown', function(e){
+      if (e.key === 'Enter'){
+        e.preventDefault();
+        formatRowInput(this);
+        var nextCls = rowInputs[idx + 1];
+        if (nextCls){ var nextEl = tr.querySelector('.'+nextCls); nextEl.focus(); nextEl.select(); }
+        else { this.blur(); }
+      }
+    });
+  });
+  return tr;
+}
+
+function calcCostingTotals(){
+  if (document.getElementById('orderCalcOverlay').style.display === 'flex'){
+    renderOrderCalculator();
+  }
+  var fabricTotal = 0;
+  var validRowIds = [];
+  var slotIds = Object.keys(fabricSlots);
+  for (var s = 0; s < slotIds.length; s++){
+    var slotId = slotIds[s];
+    var card = document.getElementById(slotId);
+    if (!card) continue;
+    var fabricSelectEl = card.querySelector('.slotFabric');
+    var fabricName = fabricSelectEl ? fabricSelectEl.value : '';
+    var colourSelect = card.querySelector('.slotColour');
+    if (!colourSelect || colourSelect.selectedIndex === -1) continue;
+    var colourOption = colourSelect.options[colourSelect.selectedIndex];
+    var colour = colourOption ? colourOption.value : '';
+    var priceRoll = colourOption ? (parseFloat(colourOption.getAttribute('data-price')) || 0) : 0;
+    var priceUnit = colourOption ? colourOption.getAttribute('data-unit') : 'yard';
+    var priceM = priceRoll;
+    if (priceUnit === 'yard'){ priceM = ceilToStep(priceRoll * 1.1, 500); }
+    else if (priceUnit === 'kg'){
+      var fabricMatch = fabricsCache.find(function(f){ return f.name === fabricName && (f.color_name || 'RFD') === colour; });
+      var metersPerKg = fabricMatch ? (parseFloat(fabricMatch.meters_per_kg) || 1) : 1;
+      priceM = ceilToStep(priceRoll / metersPerKg, 500);
+    }
+    fabricSlots[slotId].priceMUsed = priceM;
+    var defaultConsumption = 0;
+    try {
+      if (fabricSlots[slotId].mode === 'per_meter'){ defaultConsumption = ceilToStep(calcPerMeterSlot(card), 0.05); }
+      else { defaultConsumption = ceilToStep(calcPanelSlot(card), 0.05); }
+    } catch(err){ continue; }
+    var tr = getOrCreateCostRow(slotId);
+    tr.querySelector('.rowFabricName').textContent = fabricName;
+    tr.querySelector('.rowColour').textContent = colour;
+    tr.querySelector('.rowPriceM').textContent = 'Rp ' + priceM.toLocaleString('id-ID');
+    var cospInput = tr.querySelector('.rowConsp');
+    if (!cospInput.getAttribute('data-touched')){ cospInput.value = defaultConsumption.toFixed(2); }
+    var washing = parseFloat(tr.querySelector('.rowWashing').value.replace(/,/g, '')) || 0;
+    var dyeing = parseFloat(tr.querySelector('.rowDyeing').value.replace(/,/g, '')) || 0;
+    var printing = parseFloat(tr.querySelector('.rowPrinting').value.replace(/,/g, '')) || 0;
+    var tiedye = parseFloat(tr.querySelector('.rowTiedye').value.replace(/,/g, '')) || 0;
+    var editedConsumption = parseFloat(cospInput.value.replace(/,/g, ''));
+    if (isNaN(editedConsumption)) editedConsumption = defaultConsumption;
+    fabricSlots[slotId].consumptionUsed = editedConsumption;
+    var combinedPriceM = priceM + washing + dyeing + printing + tiedye;
+    var cost = combinedPriceM * editedConsumption;
+    fabricTotal = fabricTotal + cost;
+    tr.querySelector('.rowCost').textContent = 'Rp ' + Math.round(cost).toLocaleString('id-ID');
+    validRowIds.push('costrow_' + slotId);
+  }
+  Array.from(document.getElementById('fabricCostRows').querySelectorAll('tr')).forEach(function(existingTr){
+    if (validRowIds.indexOf(existingTr.id) === -1){ existingTr.remove(); }
+  });
+  document.getElementById('fabricCostTotal').textContent = 'Rp ' + Math.round(fabricTotal).toLocaleString('id-ID');
+  var sewing = parseFloat(document.getElementById('cs_sewing').value.replace(/,/g, '')) || 0;
+  var cutting = parseFloat(document.getElementById('cs_cutting').value) || 0;
+  var hardwareRaw = document.getElementById('cs_hardware').getAttribute('data-raw') || '0';
+  var hardwareExpr = hardwareRaw.charAt(0) === '=' ? hardwareRaw.slice(1) : hardwareRaw;
+  var hardware = parseFloat(hardwareExpr) || 0;
+  if (/^[0-9+\-*/().\s]+$/.test(hardwareExpr)){
+    try { hardware = Function('"use strict"; return (' + hardwareExpr + ')')(); } catch(err){ hardware = 0; }
+  }
+  var overhead = parseFloat(document.getElementById('cs_overhead').value) || 0;
+  var markup = parseFloat(document.getElementById('cs_markup').value) || 0;
+  var baseCost = fabricTotal + sewing + cutting + hardware + overhead;
+  var afterMarkup = baseCost * (1 + markup/100);
+  var sellingPrice = ceilToStep(afterMarkup, 1000);
+  document.getElementById('cs_baseCost').textContent = 'Rp ' + Math.round(baseCost).toLocaleString('id-ID');
+  document.getElementById('cs_afterMarkup').textContent = 'Rp ' + Math.round(afterMarkup).toLocaleString('id-ID');
+  document.getElementById('cs_sellingPrice').textContent = 'Rp ' + Math.round(sellingPrice).toLocaleString('id-ID');
+  var givenPriceInput = document.getElementById('cs_givenPrice');
+  if (!givenPriceInput.getAttribute('data-touched')){ givenPriceInput.value = Math.round(sellingPrice).toLocaleString('en-US'); }
+  calcGivenPriceMarkup();
+}
+
+function calcGivenPriceMarkup(){
+  var baseCostText = document.getElementById('cs_baseCost').textContent.replace(/[^\d]/g, '');
+  var baseCost = parseFloat(baseCostText) || 0;
+  var givenPrice = parseFloat(document.getElementById('cs_givenPrice').value.replace(/,/g, '')) || 0;
+  var effectiveMarkup = baseCost > 0 ? ((givenPrice / baseCost) - 1) * 100 : 0;
+  document.getElementById('cs_effectiveMarkup').textContent = effectiveMarkup.toFixed(1) + '%';
+}
+function isOwnerAccount(){
+  return isAnonymousUser || currentUserName === 'Eka Saraswaty';
+}
+
+async function deleteCostingSheet(sheetId){
+  if (!isOwnerAccount()){ alert('Only the account owner can delete costing sheets.'); return; }
+  var confirmed = confirm('Are you sure you want to permanently delete this costing sheet? This cannot be undone.');
+  if (!confirmed) return;
+
+  await supabaseClient.from('costing_sheet_changelog').delete().eq('costing_sheet_id', sheetId);
+  const { error } = await supabaseClient.from('costing_sheets').delete().eq('id', sheetId);
+  if (error){ alert('Error deleting: ' + error.message); return; }
+  alert('Costing sheet deleted.');
+  loadSummary();
+}
+var summaryDataCache = [];
+var summaryCategoriesCache = [];
+var selectedSummaryCustomerId = null;
+
+async function loadSummary(){
+  document.getElementById('summaryLoadStatus').textContent = 'Loading...';
+  const custRes = await supabaseClient.from('customers').select('*').order('display_order').order('name');
+  const catRes = await supabaseClient.from('categories').select('*');
+  const sheetsRes = await supabaseClient.from('costing_sheets').select('*, variations(*, styles(*), customers(*))');
+  var customers = custRes.data || [];
+  summaryCategoriesCache = catRes.data || [];
+  summaryDataCache = sheetsRes.data || [];
+  if (sheetsRes.error){ document.getElementById('summaryLoadStatus').textContent = 'Error: ' + sheetsRes.error.message; return; }
+  var tabsRow = document.getElementById('summaryCustomerTabs');
+  tabsRow.innerHTML = customers.map(function(c, idx){
+    return '<span onclick="selectSummaryCustomer(\''+c.id+'\', this)" style="padding-bottom:10px;cursor:pointer;'+(idx===0 ? 'font-weight:500;border-bottom:2px solid var(--accent)' : 'color:var(--text-muted)')+'">'+c.name+'</span>';
+  }).join('');
+  document.getElementById('summaryLoadStatus').textContent = summaryDataCache.length + ' costing sheets loaded.';
+  if (customers.length > 0){ selectedSummaryCustomerId = customers[0].id; renderSummaryTable(); }
+  else { document.getElementById('summaryRows').innerHTML = '<tr><td colspan="10" class="note">No customers yet.</td></tr>'; }
+}
+
+function selectSummaryCustomer(customerId, el){
+  selectedSummaryCustomerId = customerId;
+  document.querySelectorAll('#summaryCustomerTabs span').forEach(function(span){
+    span.style.fontWeight = ''; span.style.borderBottom = ''; span.style.color = 'var(--text-muted)';
+  });
+  el.style.fontWeight = '500'; el.style.borderBottom = '2px solid var(--accent)'; el.style.color = '';
+  renderSummaryTable();
+}
+
+function renderSummaryTable(){
+  var searchTerm = (document.getElementById('summarySearchStyle').value || '').toLowerCase();
+  var colourSearchTerm = (document.getElementById('summarySearchColour').value || '').toLowerCase();
+  var fabricSearchTerm = (document.getElementById('summarySearchFabric').value || '').toLowerCase();
+  var statusFilter = document.getElementById('summaryStatusFilter').value;
+  var filtered = summaryDataCache.filter(function(row){
+    if (!row.variations || !row.variations.customers) return false;
+    if (row.variations.customers.id !== selectedSummaryCustomerId) return false;
+    if (statusFilter && row.status !== statusFilter) return false;
+    var styleName = row.variations.styles ? row.variations.styles.name.toLowerCase() : '';
+    if (searchTerm && styleName.indexOf(searchTerm) === -1) return false;
+    var colourName = (row.variations.color || '').toLowerCase();
+    if (colourSearchTerm && colourName.indexOf(colourSearchTerm) === -1) return false;
+    if (fabricSearchTerm){
+      var fabricSlotsForSearch = row.fabric_slots && Array.isArray(row.fabric_slots) ? row.fabric_slots : [];
+      var fabricNamesForSearch = fabricSlotsForSearch.map(function(slot){ return (slot && slot.fabric ? slot.fabric : '').toLowerCase(); });
+      var hasMatch = fabricNamesForSearch.some(function(n){ return n.indexOf(fabricSearchTerm) !== -1; });
+      if (!hasMatch) return false;
+    }
+    return true;
+  });
+  var rows = document.getElementById('summaryRows');
+  rows.innerHTML = '';
+  if (filtered.length === 0){
+    rows.innerHTML = '<tr><td colspan="10" class="note">No costing sheets found for this customer.</td></tr>';
+    return;
+  }
+  filtered.forEach(function(row){
+    var styleName = row.variations.styles ? row.variations.styles.name : '—';
+    var colour = row.variations.color || '—';
+    var statusBadge = row.status === 'submitted' ? '<span class="badge badge-success">Submitted</span>' : '<span class="badge badge-accent">Draft</span>';
+    var orderedBadge = row.is_ordered ? '<span class="badge badge-success">Yes</span>' : '<span class="note">No</span>';
+    var givenPrice = row.given_price ? 'Rp ' + Number(row.given_price).toLocaleString('id-ID') : '—';
+    var subDate = row.submitted_at ? new Date(row.submitted_at).toLocaleDateString('en-GB', {day:'2-digit', month:'short', year:'numeric'}) : '—';
+    var fabricSlotsSafe = row.fabric_slots && Array.isArray(row.fabric_slots) ? row.fabric_slots : [];
+    var fabricNames = fabricSlotsSafe.map(function(slot){ return slot && slot.fabric ? slot.fabric : null; }).filter(function(n){ return n; });
+    var uniqueFabricNames = [];
+    fabricNames.forEach(function(n){ if (uniqueFabricNames.indexOf(n) === -1) uniqueFabricNames.push(n); });
+    var fabricDisplay = uniqueFabricNames.slice(0, 2).join(', ');
+    if (uniqueFabricNames.length > 2){ fabricDisplay += ' +' + (uniqueFabricNames.length - 2); }
+    if (!fabricDisplay) fabricDisplay = '—';
+    var versionLabel = 'V' + row.version;
+    var tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td>'+styleName+'</td><td>'+colour+'</td><td class="note">'+(row.category_name_saved||'—')+'</td><td class="note">'+fabricDisplay+'</td><td>'+givenPrice+'</td>' +
+      '<td>'+statusBadge+'</td><td>'+orderedBadge+'</td><td>'+(row.requester_name||'—')+'</td><td class="note">'+subDate+'</td>' +
+      '<td style="white-space:nowrap"><button class="small" onclick="viewCostingSheet(\''+row.id+'\')">View</button> <button class="small" onclick="goToEditCostingSheet(\''+row.id+'\')">Go to</button> <button class="small" onclick="viewChangelog(\''+row.id+'\')">Log ('+versionLabel+')</button>'+(isOwnerAccount() ? ' <button class="small" style="color:var(--danger)" onclick="deleteCostingSheet(\''+row.id+'\')">Delete</button>' : '')+'</td>';
+    rows.appendChild(tr);
+  });
+}
+
+function viewCostingSheet(sheetId){
+  var row = summaryDataCache.find(function(r){ return r.id === sheetId; });
+  if (!row) return;
+  var styleName = row.variations && row.variations.styles ? row.variations.styles.name : '—';
+  var colour = row.variations ? row.variations.color : '—';
+  var customerName = row.variations && row.variations.customers ? row.variations.customers.name : '—';
+  var imagesHtml = '';
+  if (row.image_urls && row.image_urls.length > 0){
+    imagesHtml = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">' +
+      row.image_urls.map(function(url){ return '<img src="'+url+'" style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid var(--border)">'; }).join('') + '</div>';
+  }
+  var fabricCardsHtml = (row.fabric_slots || []).map(function(slot){
+    var sizeRows = '';
+    if (slot.mode === 'per_meter' && slot.sizes && slot.formulas){
+      sizeRows = '<table style="margin-bottom:4px"><tr><th style="font-size:11px;padding:3px">Size</th><th style="font-size:11px;padding:3px">Formula</th></tr>' +
+        slot.sizes.map(function(size){ return '<tr><td style="font-size:11px;padding:3px">'+size+'</td><td style="font-size:11px;padding:3px">'+(slot.formulas[size] || '—')+'</td></tr>'; }).join('') + '</table>';
+    } else if (slot.mode === 'panel'){
+      sizeRows = '<div style="font-size:11px;color:var(--text-secondary)">Panel: '+(slot.panel_instruction || '—')+'</div>';
+    }
+    return '<div class="card" style="margin-bottom:0;padding:10px 12px">' +
+      '<div style="font-size:12px;font-weight:500;margin-bottom:4px">'+slot.fabric+' — '+slot.colour+'</div>' +
+      sizeRows +
+      '<div style="font-size:11px;color:var(--text-secondary);margin-top:4px">Consp.: '+(slot.consumption_used||0)+'m</div>' +
+    '</div>';
+  }).join('');
+  var content =
+    '<h1 style="margin-bottom:4px">'+styleName+' — '+colour+'</h1>' +
+    '<p class="note" style="margin-bottom:16px">'+customerName+' · V'+row.version+'</p>' +
+    imagesHtml +
+    '<h3>Fabrics</h3>' +
+    '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px">' + fabricCardsHtml + '</div>' +
+    (row.notes ? '<div style="margin-top:12px"><label>Notes</label><p style="font-size:13px">'+row.notes.replace(/\n/g,'<br>')+'</p></div>' : '');
+  document.getElementById('viewCostingContent').innerHTML = content;
+  goToPage('view-costing');
+}
+
+async function viewChangelog(sheetId){
+  const { data, error } = await supabaseClient.from('costing_sheet_changelog').select('*').eq('costing_sheet_id', sheetId).order('changed_at', { ascending: false });
+  var rows = document.getElementById('changelogRows');
+  rows.innerHTML = '';
+  if (error || !data || data.length === 0){
+    rows.innerHTML = '<tr><td colspan="4" class="note">No changes logged yet.</td></tr>';
+  } else {
+    data.forEach(function(entry){
+      var dateStr = new Date(entry.changed_at).toLocaleDateString('en-GB', {day:'2-digit', month:'short', year:'numeric'});
+      var tr = document.createElement('tr');
+      tr.innerHTML = '<td>V'+entry.from_version+' → V'+entry.to_version+'</td><td>'+entry.changed_by+'</td><td class="note">'+dateStr+'</td><td>'+entry.change_summary+'</td>';
+      rows.appendChild(tr);
+    });
+  }
+  document.getElementById('changelogOverlay').style.display = 'flex';
+}
+
+async function goToEditCostingSheet(sheetId){
+  const { data: row, error } = await supabaseClient.from('costing_sheets').select('*, variations(*, styles(*), customers(*))').eq('id', sheetId).single();
+  if (error || !row) return;
+  editingSheetId = sheetId;
+  document.querySelectorAll('.nav-btn').forEach(function(b){ b.classList.remove('active'); });
+  document.querySelectorAll('.page').forEach(function(p){ p.classList.remove('active'); });
+  document.getElementById('page-costing-local').classList.add('active');
+  const custRes = await supabaseClient.from('customers').select('*').order('display_order').order('name');
+  const deptRes = await supabaseClient.from('departments').select('*').order('name');
+  const catRes = await supabaseClient.from('categories').select('*').order('name');
+  const recRes = await supabaseClient.from('recipients').select('*').order('name');
+  const fabRes = await supabaseClient.from('fabrics').select('*').order('name');
+  customersCache = custRes.data || [];
+  departmentsCache = deptRes.data || [];
+  categoriesCache = catRes.data || [];
+  recipientsCache = recRes.data || [];
+  fabricsCache = fabRes.data || [];
+  document.getElementById('cs_customer').innerHTML = customersCache.map(function(c){ return '<option value="'+c.id+'">'+c.name+'</option>'; }).join('');
+  document.getElementById('cs_department').innerHTML = departmentsCache.map(function(d){ return '<option value="'+d.id+'" data-markup="'+d.markup_percent+'">'+d.name+'</option>'; }).join('');
+  document.getElementById('cs_requester').innerHTML = recipientsCache.map(function(r){ return '<option value="'+r.name+'">'+r.name+'</option>'; }).join('');
+  var styleName = row.variations && row.variations.styles ? row.variations.styles.name : '';
+  var colour = row.variations ? row.variations.color : '';
+  var customerId = row.variations && row.variations.customers ? row.variations.customers.id : '';
+  document.getElementById('cs_styleName').value = styleName;
+  document.getElementById('cs_colour').value = colour;
+  autoGrowInput(document.getElementById('cs_styleName'));
+  autoGrowInput(document.getElementById('cs_colour'));
+  document.getElementById('cs_customer').value = customerId;
+  document.getElementById('cs_department').value = row.department_id_saved || '';
+  populateCategoryOptions();
+  document.getElementById('cs_category').value = row.category_name_saved || '';
+  updateMarkupDisplay();
+  document.getElementById('cs_requester').value = row.requester_name || '';
+  document.getElementById('cs_requestDate').value = row.request_date || '';
+  document.getElementById('cs_notes').value = row.notes || '';
+  document.getElementById('cs_additionalInfo').value = row.additional_info || '';
+  document.getElementById('cs_isOrdered').checked = !!row.is_ordered;
+  document.getElementById('cs_versionBadge').textContent = 'V' + row.version + ' · ' + (row.status === 'submitted' ? 'Submitted' : 'Draft');
+  document.getElementById('cs_duplicateBtn').style.display = 'inline-block';
+  csImages = row.image_urls || [];
+  renderCsImages();
+  document.getElementById('cs_cutting').value = row.cutting_cost_saved || '1500';
+  document.getElementById('cs_overhead').value = row.overhead_cost_saved || '2000';
+  document.getElementById('cs_hardware').setAttribute('data-raw', row.hardware_raw_saved || '0');
+  document.getElementById('cs_hardware').value = row.hardware_raw_saved || '0';
+  calcFormulaField(document.getElementById('cs_hardware'));
+  await loadSewingQuotesForCosting();
+  document.getElementById('sewingLinesTable').innerHTML = '';
+  sewingLineCount = 0;
+  (row.sewing_lines || []).forEach(function(line){
+    sewingLineCount++;
+    var lineId = 'sewingLine' + sewingLineCount;
+    var tr = document.createElement('tr');
+    tr.id = lineId;
+    tr.innerHTML =
+      '<td>'+line.name+'</td>' +
+      '<td><input class="mini-input sewingLineMax" type="text" inputmode="decimal" value="'+line.max+'" style="width:80px" oninput="recalcSewingTotal()"></td>' +
+      '<td><input class="mini-input sewingLineNawar" type="text" inputmode="decimal" value="'+line.nawar+'" style="width:80px"></td>' +
+      '<td><button class="small" onclick="removeSewingLine(\''+lineId+'\')">x</button></td>';
+    document.getElementById('sewingLinesTable').appendChild(tr);
+    var maxInput = tr.querySelector('.sewingLineMax');
+    var nawarInput = tr.querySelector('.sewingLineNawar');
+    [maxInput, nawarInput].forEach(function(input){
+      input.addEventListener('focus', function(){ this.value = this.value.replace(/,/g, ''); });
+      input.addEventListener('blur', function(){ formatRowInput(this); recalcSewingTotal(); });
+    });
+  });
+  recalcSewingTotal();
+  if (row.sewing_cost_touched){
+    document.getElementById('cs_sewing').setAttribute('data-touched', '1');
+    document.getElementById('cs_sewing').value = row.sewing_cost_saved || '0';
+  } else {
+    document.getElementById('cs_sewing').removeAttribute('data-touched');
+  }
+  fabricSlotCount = 0;
+  fabricSlots = {};
+  document.getElementById('fabricSlotsContainer').innerHTML = '';
+  document.getElementById('fabricCostRows').innerHTML = '';
+  setFourthSubprocess(row.fourth_subprocess_saved || 'Tie-dye');
+  var priceAlert = '';
+  (row.fabric_slots || []).forEach(function(slotData){
+    fabricSlotCount++;
+    var slotId = 'slot' + fabricSlotCount;
+    fabricSlots[slotId] = { mode: slotData.mode, sizes: slotData.sizes || ['S'], formulas: slotData.formulas || {} };
+    var uniqueFabricNames = [];
+    fabricsCache.forEach(function(f){ if (uniqueFabricNames.indexOf(f.name) === -1) uniqueFabricNames.push(f.name); });
+    var card = document.createElement('div');
+    card.className = 'card';
+    card.id = slotId;
+    card.innerHTML =
+      '<div class="grid-2" style="margin-bottom:8px">' +
+        '<div><label>Fabric</label><select class="slotFabric" onchange="populateSlotColors(\''+slotId+'\')">' + uniqueFabricNames.map(function(n){ return '<option value="'+n+'"'+(n===slotData.fabric?' selected':'')+'>'+n+'</option>'; }).join('') + '</select></div>' +
+        '<div><label>Colour</label><select class="slotColour" onchange="calcCostingTotals()"></select></div>' +
+      '</div>' +
+      '<div style="margin-bottom:8px">' +
+        '<button class="small" onclick="setSlotMode(\''+slotId+'\', \'panel\')" id="'+slotId+'_panelBtn">Panel</button> ' +
+        '<button class="small" onclick="setSlotMode(\''+slotId+'\', \'per_meter\')" id="'+slotId+'_meterBtn">Per meter</button>' +
+      '</div>' +
+      '<div id="'+slotId+'_content"></div>' +
+      '<button class="small" onclick="removeFabricSlot(\''+slotId+'\')" style="margin-top:8px">Remove fabric</button>';
+    document.getElementById('fabricSlotsContainer').appendChild(card);
+    var colourSelect = card.querySelector('.slotColour');
+    var matches = fabricsCache.filter(function(f){ return f.name === slotData.fabric; });
+    colourSelect.innerHTML = matches.map(function(f){
+      var label = f.color_name || 'RFD';
+      return '<option value="'+label+'" data-price="'+f.price_per_roll+'" data-unit="'+f.purchase_unit+'"'+(label===slotData.colour?' selected':'')+'>'+label+'</option>';
+    }).join('');
+    var activeBtn = document.getElementById(slotId + '_' + (slotData.mode === 'panel' ? 'panelBtn' : 'meterBtn'));
+    if (activeBtn){ activeBtn.style.background = 'var(--accent-bg)'; activeBtn.style.color = 'var(--accent)'; }
+    renderSlotContent(slotId);
+    if (slotData.mode === 'panel'){
+      var netEl = card.querySelector('.slotNetPanel');
+      var allowEl = card.querySelector('.slotAllowance');
+      var shrEl = card.querySelector('.slotPanelShrinkage');
+      var instrEl = card.querySelector('.slotPanelInstruction');
+      if (netEl) netEl.value = slotData.net_panel || '1.20';
+      if (allowEl) allowEl.value = slotData.allowance || '0.01';
+      if (shrEl) shrEl.value = slotData.panel_shrinkage || '7';
+      if (instrEl) instrEl.value = slotData.panel_instruction || '2 panel cut 3';
+    } else {
+      var shrEl2 = card.querySelector('.slotShrinkage');
+      if (shrEl2) shrEl2.value = slotData.shrinkage || '7';
+    }
+    calcCostingTotals();
+    var row2 = document.getElementById('costrow_' + slotId);
+    if (row2){
+      row2.querySelector('.rowWashing').value = slotData.washing || '0';
+      row2.querySelector('.rowDyeing').value = slotData.dyeing || '0';
+      row2.querySelector('.rowPrinting').value = slotData.printing || '0';
+      row2.querySelector('.rowTiedye').value = slotData.fourth_subprocess || '0';
+      if (slotData.consp_touched){
+        row2.querySelector('.rowConsp').value = slotData.consp_value || '0';
+        row2.querySelector('.rowConsp').setAttribute('data-touched', '1');
+      }
+    }
+    var currentFabric = fabricsCache.find(function(f){ return f.name === slotData.fabric && (f.color_name || 'RFD') === slotData.colour; });
+    if (currentFabric){
+      var currentPriceRoll = parseFloat(currentFabric.price_per_roll) || 0;
+      var currentPriceM = currentFabric.purchase_unit === 'yard' ? ceilToStep(currentPriceRoll * 1.1, 500) : currentPriceRoll;
+      var storedPriceM = parseFloat(slotData.price_per_m_used) || 0;
+      if (Math.abs(currentPriceM - storedPriceM) > 0.01){
+        priceAlert += slotData.fabric + ' (' + slotData.colour + '): was Rp ' + storedPriceM.toLocaleString('id-ID') + '/m, now Rp ' + currentPriceM.toLocaleString('id-ID') + '/m. ';
+      }
+    }
+  });
+  calcCostingTotals();
+  document.getElementById('cs_givenPrice').setAttribute('data-touched', '1');
+  document.getElementById('cs_givenPrice').value = Number(row.given_price || 0).toLocaleString('en-US');
+  var banner = document.getElementById('cs_priceAlertBanner');
+  if (priceAlert){
+    banner.textContent = '⚠ Fabric price has changed since this was costed: ' + priceAlert + 'Consider re-saving to update.';
+    banner.style.display = 'block';
+  } else {
+    banner.style.display = 'none';
+  }
+}
+
+function deepNormalizeForCompare(obj){
+  if (Array.isArray(obj)) return obj.map(deepNormalizeForCompare);
+  if (obj && typeof obj === 'object'){
+    var out = {};
+    Object.keys(obj).sort().forEach(function(k){
+      if (k === 'consp_touched') return;
+      out[k] = deepNormalizeForCompare(obj[k]);
+    });
+    return out;
+  }
+  if (typeof obj === 'string'){
+    var cleaned = obj.replace(/,/g, '').trim();
+    if (cleaned !== '' && !isNaN(cleaned)){ return Math.round(parseFloat(cleaned) * 100) / 100; }
+    return obj;
+  }
+  if (typeof obj === 'number'){ return Math.round(obj * 100) / 100; }
+  return obj;
+}
+function fieldsEqual(a, b){
+  return JSON.stringify(deepNormalizeForCompare(a === undefined ? null : a)) === JSON.stringify(deepNormalizeForCompare(b === undefined ? null : b));
+}
+
+async function saveCostingSheet(statusToSave){
+  statusToSave = statusToSave || 'draft';
+  var submittedAtValue = statusToSave === 'submitted' ? new Date().toISOString() : null;
+  var styleName = document.getElementById('cs_styleName').value.trim();
+  var colour = document.getElementById('cs_colour').value.trim();
+  var customerId = document.getElementById('cs_customer').value;
+  var deptId = document.getElementById('cs_department').value;
+  var markup = parseFloat(document.getElementById('cs_markup').value) || 0;
+  var requester = document.getElementById('cs_requester').value;
+  var requestDate = document.getElementById('cs_requestDate').value;
+  var notes = document.getElementById('cs_notes').value.trim() || null;
+  var additionalInfo = document.getElementById('cs_additionalInfo').value.trim() || null;
+  var isOrdered = document.getElementById('cs_isOrdered').checked;
+  var missingFields = [];
+  if (!styleName) missingFields.push('Style name');
+  if (!colour) missingFields.push('Colour');
+  if (!customerId) missingFields.push('Customer');
+  if (!deptId) missingFields.push('Department');
+  if (missingFields.length > 0){
+    document.getElementById('costingFormError').textContent = 'Missing: ' + missingFields.join(', ') + '.';
+    return;
+  }
+  var baseCostText = document.getElementById('cs_baseCost').textContent.replace(/[^\d]/g, '');
+  var sellingPriceText = document.getElementById('cs_sellingPrice').textContent.replace(/[^\d]/g, '');
+  var givenPriceValue = parseFloat(document.getElementById('cs_givenPrice').value.replace(/,/g, '')) || 0;
+  var slotsSnapshot = [];
+  var slotIds2 = Object.keys(fabricSlots);
+  for (var k = 0; k < slotIds2.length; k++){
+    var sid = slotIds2[k];
+    var scard = document.getElementById(sid);
+    if (!scard) continue;
+    var slotData = {
+      fabric: scard.querySelector('.slotFabric').value,
+      colour: scard.querySelector('.slotColour').value,
+      mode: fabricSlots[sid].mode,
+      price_per_m_used: fabricSlots[sid].priceMUsed || 0,
+      consumption_used: fabricSlots[sid].consumptionUsed || 0,
+      sizes: fabricSlots[sid].sizes || [],
+      formulas: fabricSlots[sid].formulas || {}
+    };
+    if (fabricSlots[sid].mode === 'panel'){
+      slotData.net_panel = scard.querySelector('.slotNetPanel') ? scard.querySelector('.slotNetPanel').value : '1.20';
+      slotData.allowance = scard.querySelector('.slotAllowance') ? scard.querySelector('.slotAllowance').value : '0.01';
+      slotData.panel_shrinkage = scard.querySelector('.slotPanelShrinkage') ? scard.querySelector('.slotPanelShrinkage').value : '7';
+      slotData.panel_instruction = scard.querySelector('.slotPanelInstruction') ? scard.querySelector('.slotPanelInstruction').value : '2 panel cut 3';
+    } else {
+      slotData.shrinkage = scard.querySelector('.slotShrinkage') ? scard.querySelector('.slotShrinkage').value : '7';
+    }
+    var rowEl = document.getElementById('costrow_' + sid);
+    if (rowEl){
+      slotData.washing = rowEl.querySelector('.rowWashing').value;
+      slotData.dyeing = rowEl.querySelector('.rowDyeing').value;
+      slotData.printing = rowEl.querySelector('.rowPrinting').value;
+      slotData.fourth_subprocess = rowEl.querySelector('.rowTiedye').value;
+      slotData.consp_touched = !!rowEl.querySelector('.rowConsp').getAttribute('data-touched');
+      slotData.consp_value = rowEl.querySelector('.rowConsp').value;
+    }
+    slotsSnapshot.push(slotData);
+  }
+  var combinedNotes = notes;
+  var sewingLinesSnapshot = Array.from(document.getElementById('sewingLinesTable').querySelectorAll('tr')).map(function(tr){
+    return { name: tr.children[0].textContent, max: tr.querySelector('.sewingLineMax').value, nawar: tr.querySelector('.sewingLineNawar').value };
+  });
+  var categoryName = document.getElementById('cs_category').value.trim();
+  var fourthSubprocessSaved = fourthSubprocessType;
+  var cuttingCostSaved = document.getElementById('cs_cutting').value;
+  var overheadCostSaved = document.getElementById('cs_overhead').value;
+  var hardwareRawSaved = document.getElementById('cs_hardware').getAttribute('data-raw') || '0';
+  var sewingCostSaved = document.getElementById('cs_sewing').value;
+  var sewingCostTouched = !!document.getElementById('cs_sewing').getAttribute('data-touched');
+  var existingStylesRes = await supabaseClient.from('styles').select('*').eq('name', styleName);
+  var existingStyles = existingStylesRes.data;
+  var styleId;
+  if (existingStyles && existingStyles.length > 0){ styleId = existingStyles[0].id; }
+  else {
+    var newStyleRes = await supabaseClient.from('styles').insert({ name: styleName, department_id: deptId }).select().single();
+    if (newStyleRes.error){ document.getElementById('costingFormError').textContent = 'Error: ' + newStyleRes.error.message; return; }
+    styleId = newStyleRes.data.id;
+  }
+  var costRes;
+  if (editingSheetId){
+    var currentSheetRes = await supabaseClient.from('costing_sheets').select('*').eq('id', editingSheetId).single();
+    var currentVersion = currentSheetRes.data ? currentSheetRes.data.version : 1;
+    var newVersion = currentVersion;
+    if (currentSheetRes.data){
+      var old = currentSheetRes.data;
+      var fieldsToCheck = [
+        { key: 'base_cost', label: 'Base cost', oldVal: old.base_cost, newVal: parseFloat(baseCostText) || 0 },
+        { key: 'given_price', label: 'Given price', oldVal: old.given_price, newVal: givenPriceValue },
+        { key: 'fabric_slots', label: 'Fabric details', oldVal: old.fabric_slots, newVal: slotsSnapshot },
+        { key: 'sewing_lines', label: 'Sewing suppliers', oldVal: old.sewing_lines, newVal: sewingLinesSnapshot },
+        { key: 'notes', label: 'Notes', oldVal: old.notes, newVal: combinedNotes },
+        { key: 'category_name_saved', label: 'Category', oldVal: old.category_name_saved, newVal: categoryName },
+        { key: 'department_id_saved', label: 'Department', oldVal: old.department_id_saved, newVal: deptId },
+        { key: 'cutting_cost_saved', label: 'Cutting cost', oldVal: old.cutting_cost_saved, newVal: cuttingCostSaved },
+        { key: 'overhead_cost_saved', label: 'Overhead cost', oldVal: old.overhead_cost_saved, newVal: overheadCostSaved },
+        { key: 'hardware_raw_saved', label: 'Hardware cost', oldVal: old.hardware_raw_saved, newVal: hardwareRawSaved },
+        { key: 'sewing_cost_saved', label: 'Sewing cost', oldVal: old.sewing_cost_saved, newVal: sewingCostSaved }
+      ];
+      var changedFields = [];
+      fieldsToCheck.forEach(function(f){ if (!fieldsEqual(f.oldVal, f.newVal)) changedFields.push(f.label); });
+      if (changedFields.length > 0){
+        newVersion = currentVersion + 1;
+        await supabaseClient.from('costing_sheet_changelog').insert({
+          costing_sheet_id: editingSheetId, from_version: currentVersion, to_version: newVersion,
+          changed_by: currentUserName || requester || 'Unknown', change_summary: changedFields.join(', ')
+        });
+      }
+    }
+    var updatePayload = {
+      status: statusToSave, version: newVersion,
+      submitted_at: statusToSave === 'submitted' ? submittedAtValue : (currentSheetRes.data ? currentSheetRes.data.submitted_at : null),
+      base_cost: parseFloat(baseCostText) || 0, markup_percent: markup, selling_price: parseFloat(sellingPriceText) || 0,
+      given_price: givenPriceValue, is_ordered: isOrdered,
+      fabric_slots: slotsSnapshot, requester_name: requester, request_date: requestDate, image_urls: csImages, notes: combinedNotes,
+      department_id_saved: deptId, category_name_saved: categoryName, sewing_lines: sewingLinesSnapshot,
+      fourth_subprocess_saved: fourthSubprocessSaved, cutting_cost_saved: cuttingCostSaved, overhead_cost_saved: overheadCostSaved, hardware_raw_saved: hardwareRawSaved,
+      sewing_cost_saved: sewingCostSaved, sewing_cost_touched: sewingCostTouched, additional_info: additionalInfo
+    };
+    costRes = await supabaseClient.from('costing_sheets').update(updatePayload).eq('id', editingSheetId);
+    var sheetRes = await supabaseClient.from('costing_sheets').select('variation_id').eq('id', editingSheetId).single();
+    if (sheetRes.data){
+      await supabaseClient.from('variations').update({ customer_id: customerId, style_id: styleId, color: colour }).eq('id', sheetRes.data.variation_id);
+    }
+  } else {
+    var newVariationRes = await supabaseClient.from('variations').insert({ customer_id: customerId, style_id: styleId, color: colour }).select().single();
+    if (newVariationRes.error){ document.getElementById('costingFormError').textContent = 'Error: ' + newVariationRes.error.message; return; }
+    costRes = await supabaseClient.from('costing_sheets').insert({
+      variation_id: newVariationRes.data.id, version: 1, status: statusToSave, submitted_at: submittedAtValue,
+      base_cost: parseFloat(baseCostText) || 0, markup_percent: markup, selling_price: parseFloat(sellingPriceText) || 0,
+      given_price: givenPriceValue, is_ordered: isOrdered,
+      fabric_slots: slotsSnapshot, requester_name: requester, request_date: requestDate, image_urls: csImages, notes: combinedNotes,
+      department_id_saved: deptId, category_name_saved: categoryName, sewing_lines: sewingLinesSnapshot,
+      fourth_subprocess_saved: fourthSubprocessSaved, cutting_cost_saved: cuttingCostSaved, overhead_cost_saved: overheadCostSaved, hardware_raw_saved: hardwareRawSaved,
+      sewing_cost_saved: sewingCostSaved, sewing_cost_touched: sewingCostTouched, additional_info: additionalInfo
+    }).select().single();
+    if (costRes.data){
+      editingSheetId = costRes.data.id;
+    }
+  }
+  if (costRes.error){ document.getElementById('costingFormError').textContent = 'Error: ' + costRes.error.message; return; }
+  document.getElementById('costingFormError').style.color = 'var(--success)';
+  document.getElementById('costingFormError').textContent = statusToSave === 'submitted' ? 'Submitted successfully!' : 'Saved as draft!';
+
+  if (editingSheetId){
+    const { data: refreshedSheet } = await supabaseClient.from('costing_sheets').select('version, status').eq('id', editingSheetId).single();
+    if (refreshedSheet){
+      document.getElementById('cs_versionBadge').textContent = 'V' + refreshedSheet.version + ' · ' + (refreshedSheet.status === 'submitted' ? 'Submitted' : 'Draft');
+    }
+  }
+}
+(async function(){
+  await checkExistingSession();
+  const res = await supabaseClient.from('departments').select('id').limit(1);
+  var statusEl = document.getElementById('connStatus');
+  if (res.error){ statusEl.textContent = 'Connection error: ' + res.error.message; statusEl.style.color = '#b91c1c'; }
+  else { statusEl.textContent = 'Connected to Supabase'; statusEl.style.color = '#15803d'; }
+})();
+</script>
+</body>
+</html>
